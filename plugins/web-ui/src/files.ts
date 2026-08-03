@@ -214,7 +214,7 @@ async function fileSha256(file: globalThis.File): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export async function uploadFailureMessage(response: Response): Promise<string> {
+async function uploadFailureMessage(response: Response): Promise<string> {
   const text = await response.text();
   const fallback = t("file.uploadFailed", { status: response.status });
   try {

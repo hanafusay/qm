@@ -104,10 +104,23 @@ test("failed uploads preserve HTTP status fallbacks and server error text", asyn
   const vite = await createViteTestServer({
     root: fileURLToPath(new URL("..", import.meta.url)),
   });
+  const fetchDescriptor = Object.getOwnPropertyDescriptor(globalThis, "fetch");
   try {
     const files = await vite.ssrLoadModule("/src/files.ts");
-    const uploadFailureMessage = files.uploadFailureMessage as ((response: Response) => Promise<string>) | undefined;
-    assert.equal(typeof uploadFailureMessage, "function");
+    const { appState } = await vite.ssrLoadModule("/src/shell-state.ts");
+    const { contextsState } = await vite.ssrLoadModule("/src/contexts.ts");
+    appState.currentView = "files";
+    appState.mainEl = document.querySelector<HTMLElement>("#app")!;
+    contextsState.loaded = true;
+    contextsState.list = [
+      {
+        scopeId: "personal:U1",
+        kind: "personal",
+        name: "Personal",
+        sessionCount: 0,
+        lastActivityAt: null,
+      },
+    ];
     const cases = [
       { locale: "en", status: 401, body: "", want: "Upload failed (401)." },
       { locale: "ja", status: 413, body: "", want: "アップロードできませんでした（413）。" },
@@ -118,14 +131,42 @@ test("failed uploads preserve HTTP status fallbacks and server error text", asyn
     ] as const;
     for (const row of cases) {
       document.querySelector<HTMLMetaElement>('meta[name="qm-locale"]')!.content = row.locale;
-      assert.equal(
-        await uploadFailureMessage!(new Response(row.body, { status: row.status })),
-        row.want,
-        `${row.locale} ${row.status}`,
-      );
+      let uploadStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        uploadStarted = resolve;
+      });
+      Object.defineProperty(globalThis, "fetch", {
+        configurable: true,
+        writable: true,
+        value: async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.includes("/api/files/upload?")) {
+            uploadStarted();
+            return new Response(row.body, { status: row.status });
+          }
+          if (url.includes("/api/files?")) return Response.json({ owned: [], shared: [] });
+          throw new Error(`unexpected request: ${url}`);
+        },
+      });
+      appState.viewRenderSeq += 1;
+      await files.renderFiles();
+      const drop = new dom.window.Event("drop", { bubbles: true, cancelable: true });
+      Object.defineProperty(drop, "dataTransfer", {
+        value: { types: ["Files"], files: [new File(["test"], "test.txt", { type: "text/plain" })] },
+      });
+      document.querySelector<HTMLElement>(".file-drop")!.dispatchEvent(drop);
+      await started;
+      let notice = "";
+      for (let attempt = 0; attempt < 20 && notice !== row.want; attempt++) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        notice = document.querySelector<HTMLElement>('[aria-live="polite"]')?.textContent?.trim() ?? "";
+      }
+      assert.equal(notice, row.want, `${row.locale} ${row.status}`);
     }
   } finally {
     await vite.close();
+    if (fetchDescriptor) Object.defineProperty(globalThis, "fetch", fetchDescriptor);
+    else delete (globalThis as { fetch?: typeof fetch }).fetch;
     for (const [key, descriptor] of previous) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
       else delete (globalThis as Record<string, unknown>)[key];
