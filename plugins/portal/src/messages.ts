@@ -81,7 +81,7 @@ const ja: Record<PortalMessageKey, string> = {
   "signIn.details": "詳細",
   "signIn.retry": "もう一度サインイン",
   "signIn.back": "最初の画面に戻る",
-  "signIn.help": "解決しない場合は、許可されたワークスペースのメンバーであることを確認し、管理者へ連絡してください。",
+  "signIn.help": "解決しない場合は、許可された組織のメンバーであることを確認し、管理者へ連絡してください。",
   "signIn.identityProvider": "認証サービスからエラーが返されました: {error}",
   "signIn.expired": "サインイン操作の有効期限が切れました。もう一度お試しください。",
   "signIn.invalidState": "サインインの状態を確認できませんでした。",

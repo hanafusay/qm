@@ -13,7 +13,7 @@ import {
   secretDropUnavailableHtml,
   signInErrorHtml,
 } from "../src/index.ts";
-import { PORTAL_MESSAGES } from "../src/messages.ts";
+import { PORTAL_MESSAGES, portalMessage } from "../src/messages.ts";
 
 test("Portal catalogs have matching keys and contain text rather than HTML", () => {
   assert.deepEqual(catalogProblems(PORTAL_MESSAGES.en, PORTAL_MESSAGES.ja), []);
@@ -21,6 +21,16 @@ test("Portal catalogs have matching keys and contain text rather than HTML", () 
     for (const message of Object.values(catalog)) assert.doesNotMatch(message, /[<>]/);
   }
   for (const message of Object.values(PORTAL_MESSAGES.ja)) assert.doesNotMatch(message, /領域/);
+});
+
+test("Japanese Portal sign-in help identifies the approved organization", () => {
+  assert.equal(
+    portalMessage("ja", "signIn.help"),
+    "解決しない場合は、許可された組織のメンバーであることを確認し、管理者へ連絡してください。",
+  );
+  for (const message of Object.values(PORTAL_MESSAGES.ja)) {
+    assert.doesNotMatch(message.replaceAll("Slackワークスペース", ""), /ワークスペース/);
+  }
 });
 
 test("sign-in, admin, and setup cards render their English and Japanese copy", () => {
