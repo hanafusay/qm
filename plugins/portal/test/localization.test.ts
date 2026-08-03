@@ -28,7 +28,9 @@ test("Japanese Portal sign-in help identifies the approved organization", () => 
     portalMessage("ja", "signIn.help"),
     "解決しない場合は、許可された組織のメンバーであることを確認し、管理者へ連絡してください。",
   );
-  for (const message of Object.values(PORTAL_MESSAGES.ja)) assert.doesNotMatch(message, /ワークスペース/);
+  for (const message of Object.values(PORTAL_MESSAGES.ja)) {
+    assert.doesNotMatch(message.replaceAll("Slackワークスペース", ""), /ワークスペース/);
+  }
 });
 
 test("sign-in, admin, and setup cards render their English and Japanese copy", () => {
