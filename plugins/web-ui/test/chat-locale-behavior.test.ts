@@ -67,7 +67,7 @@ globalThis.fetch = (async (input: RequestInfo | URL) => {
 const vite = await createViteTestServer();
 const { render } = await vite.ssrLoadModule("lit");
 const { appState } = await vite.ssrLoadModule("/src/shell-state.ts");
-const { openSession, sessionsState } = await vite.ssrLoadModule("/src/sessions.ts");
+const { openSession, renderList, sessionsState } = await vite.ssrLoadModule("/src/sessions.ts");
 const { contextsState, renderContexts, scopeChip } = await vite.ssrLoadModule("/src/contexts.ts");
 const { ambientPolicyState } = await vite.ssrLoadModule("/src/ambient-policy.ts");
 const { chatState, drawActiveChat, newChat } = await vite.ssrLoadModule("/src/chat.ts");
@@ -187,6 +187,94 @@ test("Japanese scope chips identify personal, project, channel, and group DM des
     }
   } finally {
     contextsState.list = original;
+  }
+});
+
+test("Japanese recent project regions name each destination naturally", () => {
+  selectLocale("ja");
+  const originalContexts = contextsState.list;
+  const originalSessions = sessionsState.list;
+  const originalListEl = appState.listEl;
+  const originalView = appState.currentView;
+  const originalWebOnly = sessionsState.webOnly;
+  const originalSetTimeout = window.setTimeout;
+  const list = document.createElement("div");
+  contextsState.list = [
+    { scopeId: "personal:alice", kind: "personal", name: null, sessionCount: 1, lastActivityAt: 2 },
+    {
+      scopeId: "project:alpha",
+      kind: "group",
+      name: "mpdm-alice--bob-1",
+      sessionCount: 1,
+      lastActivityAt: 1,
+      project: {
+        id: "project-alpha",
+        name: "Alpha",
+        ownerId: "alice",
+        memberIds: ["alice"],
+        scopeId: "project:alpha",
+        members: [{ principalId: "alice", displayName: "Alice" }],
+      },
+    },
+    { scopeId: "channel:C123", kind: "channel", name: "general", sessionCount: 1, lastActivityAt: 0 },
+    { scopeId: "group:G123", kind: "group", name: "Alice, Bob", sessionCount: 1, lastActivityAt: 0 },
+  ];
+  sessionsState.list = [
+    {
+      id: "personal",
+      type: "dm",
+      scopeId: "personal:alice",
+      threadRef: "web:alice:personal",
+      createdAt: 2,
+      channelName: null,
+      archived: false,
+    },
+    {
+      id: "alpha",
+      type: "group",
+      scopeId: "project:alpha",
+      threadRef: "web:alice:alpha",
+      createdAt: 1,
+      channelName: null,
+      archived: false,
+    },
+    {
+      id: "channel",
+      type: "channel",
+      scopeId: "channel:C123",
+      threadRef: "ch:C123",
+      createdAt: 0,
+      channelName: "general",
+      archived: false,
+    },
+    {
+      id: "group",
+      type: "group",
+      scopeId: "group:G123",
+      threadRef: "dm:G123",
+      createdAt: 0,
+      channelName: "Alice, Bob",
+      archived: false,
+    },
+  ];
+  appState.listEl = list;
+  appState.currentView = "chats";
+  sessionsState.webOnly = false;
+  Object.defineProperty(window, "setTimeout", { configurable: true, writable: true, value: () => 0 });
+
+  try {
+    renderList();
+    assert.deepEqual(
+      [...list.querySelectorAll<HTMLElement>(".recent-project")].map((region) => region.getAttribute("aria-label")),
+      ["個人プロジェクト", "Alphaプロジェクト", "#general", "Alice, Bob"],
+    );
+  } finally {
+    contextsState.list = originalContexts;
+    sessionsState.list = originalSessions;
+    appState.listEl = originalListEl;
+    appState.currentView = originalView;
+    sessionsState.webOnly = originalWebOnly;
+    Object.defineProperty(window, "setTimeout", { configurable: true, writable: true, value: originalSetTimeout });
   }
 });
 
