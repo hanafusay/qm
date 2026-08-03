@@ -90,8 +90,8 @@ test("Admin current-brand shell cache discards entries from an older brand", asy
   assert.equal(renders, 5);
 });
 
-test("Japanese Admin labels distinguish workspaces, policy targets, and permission targets", () => {
-  assert.equal(adminMessage("ja", "common.scope"), "ワークスペース");
+test("Japanese Admin labels distinguish projects, policy targets, and permission targets", () => {
+  assert.equal(adminMessage("ja", "common.scope"), "プロジェクト");
   assert.equal(adminMessage("ja", "common.executionLocation"), "実行場所");
   assert.equal(adminMessage("ja", "common.conversationLocation"), "会話の場所");
   assert.equal(adminMessage("ja", "common.policyTarget"), "適用先");
@@ -102,6 +102,15 @@ test("Japanese Admin labels distinguish workspaces, policy targets, and permissi
   assert.equal(adminMessage("ja", "governance.selectedScope"), "選択中の適用先");
   assert.equal(adminMessage("ja", "metrics.phase.layers.label"), "作業環境の復元");
   for (const message of Object.values(ADMIN_MESSAGES.ja)) assert.doesNotMatch(message, /領域/);
+});
+
+test("Japanese Admin project messages reserve ワークスペース for Slack", () => {
+  for (const [key, message] of Object.entries(ADMIN_MESSAGES.ja)) {
+    if (key === "onboarding.slackWorkspace") continue;
+    assert.doesNotMatch(message, /ワークスペース/, key);
+  }
+  assert.equal(adminMessage("ja", "onboarding.slackWorkspace"), "Slackワークスペース");
+  assert.equal(adminMessage("ja", "files.personalEmpty"), "個人プロジェクトにファイルはありません。");
 });
 
 test("Japanese Admin operational messages render dynamic values without interpreting them as markup", () => {

@@ -1305,8 +1305,7 @@ const ja: Record<keyof typeof en, string> = {
   "context.activeAt": "アクティブ {time}",
   "context.everything": "すべて",
   "context.privateChannel": "非公開チャンネル",
-  "context.separateResourcesFor":
-    "この{kind}のエージェントのファイルと記憶は、ほかのワークスペースとは分かれています。",
+  "context.separateResourcesFor": "この{kind}のエージェントのファイルと記憶は、ほかのプロジェクトとは分かれています。",
   "context.readyTitleFor": "この{kind}は作業を開始できます",
   "context.readyBodyFor":
     "新しいチャットで会話を始めてください。そこで作成したファイル、自動化、その他の作業はこの{kind}内に保存されます。",
@@ -1715,7 +1714,7 @@ const ja: Record<keyof typeof en, string> = {
   "connector.linkedAccounts": "連携済みアカウント",
   "connector.providerDescription": "エージェントがあなたとして利用できるプロバイダーAPIです。",
   "connector.noAccounts": "利用可能なアカウントはありません",
-  "connector.noAccountsDescription": "このワークスペースにはアカウント連携がまだ設定されていません。",
+  "connector.noAccountsDescription": "このプロジェクトにはアカウント連携がまだ設定されていません。",
   "connector.storedCredentialsDescription": "1回限りの安全なフォームから追加したAPIキー、トークン、ファイルです。",
   "connector.noStoredCredentials": "保存済みの認証情報はありません",
   "connector.noStoredCredentialsDescription": "秘密情報をチャットに貼り付けずに追加できます。",

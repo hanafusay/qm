@@ -79,6 +79,10 @@ test("Japanese web messages do not use 領域", () => {
   for (const message of Object.values(WEB_MESSAGES.ja)) assert.doesNotMatch(message, /領域/);
 });
 
+test("Japanese web project messages do not call projects workspaces", () => {
+  for (const message of Object.values(WEB_MESSAGES.ja)) assert.doesNotMatch(message, /ワークスペース/);
+});
+
 test("deployment chat drafts use the selected language", () => {
   assert.equal(webMessage("en", "deployment.agentDraft"), "Deploy an app for me. ");
   assert.equal(webMessage("ja", "deployment.agentDraft"), "アプリを公開してください。 ");
