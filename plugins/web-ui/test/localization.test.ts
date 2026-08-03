@@ -83,6 +83,19 @@ test("Japanese web project messages do not call projects workspaces", () => {
   for (const message of Object.values(WEB_MESSAGES.ja)) assert.doesNotMatch(message, /ワークスペース/);
 });
 
+test("Japanese web generic scope copy uses 利用先 while project labels remain specific", () => {
+  assert.equal(
+    webMessage("ja", "context.separateResourcesFor"),
+    "この{kind}のエージェントのファイルと記憶は、ほかの利用先とは分かれています。",
+  );
+  assert.equal(
+    webMessage("ja", "connector.noAccountsDescription"),
+    "この利用先にはアカウント連携がまだ設定されていません。",
+  );
+  assert.equal(webMessage("ja", "context.personal"), "個人プロジェクト");
+  assert.equal(webMessage("ja", "context.shared"), "共有プロジェクト");
+});
+
 test("deployment chat drafts use the selected language", () => {
   assert.equal(webMessage("en", "deployment.agentDraft"), "Deploy an app for me. ");
   assert.equal(webMessage("ja", "deployment.agentDraft"), "アプリを公開してください。 ");

@@ -90,8 +90,8 @@ test("Admin current-brand shell cache discards entries from an older brand", asy
   assert.equal(renders, 5);
 });
 
-test("Japanese Admin labels distinguish projects, policy targets, and permission targets", () => {
-  assert.equal(adminMessage("ja", "common.scope"), "プロジェクト");
+test("Japanese Admin labels distinguish destinations, policy targets, and permission targets", () => {
+  assert.equal(adminMessage("ja", "common.scope"), "利用先");
   assert.equal(adminMessage("ja", "common.executionLocation"), "実行場所");
   assert.equal(adminMessage("ja", "common.conversationLocation"), "会話の場所");
   assert.equal(adminMessage("ja", "common.policyTarget"), "適用先");
@@ -104,13 +104,18 @@ test("Japanese Admin labels distinguish projects, policy targets, and permission
   for (const message of Object.values(ADMIN_MESSAGES.ja)) assert.doesNotMatch(message, /領域/);
 });
 
-test("Japanese Admin project messages reserve ワークスペース for Slack", () => {
+test("Japanese Admin generic scope copy uses 利用先 and reserves ワークスペース for Slack", () => {
   for (const [key, message] of Object.entries(ADMIN_MESSAGES.ja)) {
     if (key === "onboarding.slackWorkspace") continue;
     assert.doesNotMatch(message, /ワークスペース/, key);
   }
   assert.equal(adminMessage("ja", "onboarding.slackWorkspace"), "Slackワークスペース");
   assert.equal(adminMessage("ja", "files.personalEmpty"), "個人プロジェクトにファイルはありません。");
+  assert.equal(
+    adminMessage("ja", "files.indexCapped"),
+    "最新2,000件だけを検索対象にしています。古いファイルしかない利用先は表示されません。",
+  );
+  assert.equal(adminMessage("ja", "scope.loading"), "利用先を読み込み中…");
 });
 
 test("Japanese Admin operational messages render dynamic values without interpreting them as markup", () => {

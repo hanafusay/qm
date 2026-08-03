@@ -338,7 +338,7 @@ function recentItem(item: RecentItem): TemplateResult {
   if (item.groupKind === "channel") fallbackName = t("session.channel");
   else if (item.groupKind === "group") fallbackName = t("session.groupDm");
   const name = item.groupKind === "personal" ? t("session.personal") : (item.name ?? fallbackName);
-  const label = item.groupKind === "personal" ? name : t("session.projectLabel", { name });
+  const label = item.groupKind === "project" ? t("session.projectLabel", { name }) : name;
   const childrenId = `recent-${item.scopeId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   const menuKey = projectMenuKey(item.scopeId);
   const menuOpen = sessionsState.openMenuId === menuKey;

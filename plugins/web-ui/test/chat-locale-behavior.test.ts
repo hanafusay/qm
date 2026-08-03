@@ -190,12 +190,13 @@ test("Japanese scope chips identify personal, project, channel, and group DM des
   }
 });
 
-test("Japanese recent project regions name personal and named projects naturally", () => {
+test("Japanese recent project regions name each destination naturally", () => {
   selectLocale("ja");
   const originalContexts = contextsState.list;
   const originalSessions = sessionsState.list;
   const originalListEl = appState.listEl;
   const originalView = appState.currentView;
+  const originalWebOnly = sessionsState.webOnly;
   const list = document.createElement("div");
   contextsState.list = [
     { scopeId: "personal:alice", kind: "personal", name: null, sessionCount: 1, lastActivityAt: 2 },
@@ -214,6 +215,8 @@ test("Japanese recent project regions name personal and named projects naturally
         members: [{ principalId: "alice", displayName: "Alice" }],
       },
     },
+    { scopeId: "channel:C123", kind: "channel", name: "general", sessionCount: 1, lastActivityAt: 0 },
+    { scopeId: "group:G123", kind: "group", name: "Alice, Bob", sessionCount: 1, lastActivityAt: 0 },
   ];
   sessionsState.list = [
     {
@@ -234,21 +237,41 @@ test("Japanese recent project regions name personal and named projects naturally
       channelName: null,
       archived: false,
     },
+    {
+      id: "channel",
+      type: "channel",
+      scopeId: "channel:C123",
+      threadRef: "ch:C123",
+      createdAt: 0,
+      channelName: "general",
+      archived: false,
+    },
+    {
+      id: "group",
+      type: "group",
+      scopeId: "group:G123",
+      threadRef: "dm:G123",
+      createdAt: 0,
+      channelName: "Alice, Bob",
+      archived: false,
+    },
   ];
   appState.listEl = list;
   appState.currentView = "chats";
+  sessionsState.webOnly = false;
 
   try {
     renderList();
     assert.deepEqual(
       [...list.querySelectorAll<HTMLElement>(".recent-project")].map((region) => region.getAttribute("aria-label")),
-      ["個人プロジェクト", "Alphaプロジェクト"],
+      ["個人プロジェクト", "Alphaプロジェクト", "#general", "Alice, Bob"],
     );
   } finally {
     contextsState.list = originalContexts;
     sessionsState.list = originalSessions;
     appState.listEl = originalListEl;
     appState.currentView = originalView;
+    sessionsState.webOnly = originalWebOnly;
   }
 });
 
