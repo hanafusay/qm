@@ -208,6 +208,24 @@ test("Japanese runtime renders localized bot behavior options", () => {
   ]);
 });
 
+test("Japanese user-view controls render an audited user-view action instead of sign-in", async () => {
+  const context = createRuntime("ja", "en-US");
+  const notices: string[] = [];
+  Object.assign(context, {
+    alert: (message: string) => notices.push(message),
+    fetch: async () => ({ ok: false, status: 503, json: async () => ({ message: "接続できません" }) }),
+  });
+  vm.runInContext(
+    `${functionSource("openWebUiAs")}\n${functionSource("webUiAsButton")}\nglobalThis.__openWebUiAs = openWebUiAs; globalThis.__webUiAsButton = webUiAsButton;`,
+    context,
+  );
+  const button = vm.runInContext('__webUiAsButton("U1")', context) as FakeElement;
+  assert.equal(button.textContent, "利用者として表示 ↗");
+  assert.equal(button.title, "U1としてアシスタントのWeb画面を表示（監査対象）");
+  await vm.runInContext('__openWebUiAs("U1")', context);
+  assert.deepEqual(notices, ["利用者として表示を開始できませんでした: 接続できません"]);
+});
+
 test("Japanese metrics renderer uses localized labels and ja-JP counts", () => {
   const context = createRuntime("ja", "en-US");
   vm.runInContext(
@@ -334,7 +352,7 @@ test("Japanese user renderer localizes fallback copy and every displayed count",
       fileKind: fileKindCell?.text,
       commandPolicy: configValue("コマンドポリシー"),
       egress: configValue("外部通信の上書き"),
-      connectors: configValue("接続済み連携"),
+      connectors: configValue("連携済みの外部サービス"),
       conversationLocation: conversationTable?.headers[1],
     },
     {

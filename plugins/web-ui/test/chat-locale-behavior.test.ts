@@ -170,7 +170,7 @@ test("Japanese scope chips identify personal, project, channel, and group DM des
     { scopeId: "group:G123", kind: "group", name: "Alice, Bob", sessionCount: 0, lastActivityAt: null },
   ];
   const cases = [
-    ["personal:alice", "個人プロジェクト: 個人プロジェクト", "個人プロジェクト"],
+    ["personal:alice", "個人プロジェクト", "個人プロジェクト"],
     ["project:synthetic-1", "プロジェクト: Alpha", "Alpha"],
     ["channel:C123", "チャンネル: #general", "general"],
     ["group:G123", "グループDM: Alice, Bob", "Alice, Bob"],

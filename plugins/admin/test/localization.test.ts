@@ -56,8 +56,11 @@ test("Japanese Admin names sign-in, connectors, and credentials consistently", (
   assert.equal(adminMessage("ja", "signOut"), "サインアウト");
   assert.equal(adminMessage("ja", "auth.signInTitle"), "ポータルからサインイン");
   assert.equal(adminMessage("ja", "auth.signedInAs"), "{principal} としてサインイン中");
+  assert.equal(adminMessage("ja", "auth.openAs"), "利用者として表示 ↗");
+  assert.equal(adminMessage("ja", "auth.impersonationFailed"), "利用者として表示を開始できませんでした: {message}");
+  assert.equal(adminMessage("ja", "common.impersonate"), "利用者として表示 ↗");
   assert.equal(adminMessage("ja", "view.connectors"), "外部サービス連携");
-  assert.equal(adminMessage("ja", "users.connectorsLinked"), "接続済み連携");
+  assert.equal(adminMessage("ja", "users.connectorsLinked"), "連携済みの外部サービス");
   assert.equal(adminMessage("ja", "connectors.manageDenied"), "組織管理者だけが外部サービス連携を管理できます。");
   assert.equal(adminMessage("ja", "view.keychain"), "認証情報");
 });

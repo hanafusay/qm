@@ -40,7 +40,6 @@ import { cronRunSummary, cronRunSummaryTitle, cronScheduleSummary } from "./cron
 import { restoreDialogFocus } from "./dialog-focus";
 import { ambientPolicyApplies, ambientPolicySection, loadAmbientPolicy, resetAmbientPolicy } from "./ambient-policy";
 import { locale, t } from "./i18n";
-import type { WebMessageKey } from "./messages";
 
 interface ScopeFile {
   id: string;
@@ -267,11 +266,11 @@ function metaForScope(
 
 export function scopeChip(scopeId: string | null, fallbackName?: string | null): TemplateResult {
   const { title, glyph, kind } = metaForScope(scopeId, fallbackName);
-  let key: WebMessageKey = "context.scopeChipPersonal";
-  if (kind === "project") key = "context.scopeChipProject";
-  else if (kind === "channel") key = "context.scopeChipChannel";
-  else if (kind === "group") key = "context.scopeChipGroup";
-  return html`<span class="scope-chip" title=${t(key, { title })}
+  let tooltip = title;
+  if (kind === "project") tooltip = t("context.scopeChipProject", { title });
+  else if (kind === "channel") tooltip = t("context.scopeChipChannel", { title });
+  else if (kind === "group") tooltip = t("context.scopeChipGroup", { title });
+  return html`<span class="scope-chip" title=${tooltip}
     >${icon(glyph, 12)}<span>${title.replace(/^#/, "")}</span></span
   >`;
 }
