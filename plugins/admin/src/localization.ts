@@ -27,3 +27,28 @@ export function localizeAdminShell(template: string, locale: Locale): string {
   });
   return withTokens.replaceAll("__ADMIN_MESSAGES__", () => inertJson(ADMIN_MESSAGES[locale]));
 }
+
+export function createCurrentBrandShellCache<Brand, Shell>(
+  keyOf: (branding: Brand) => string,
+  render: (branding: Brand, locale: Locale) => Shell,
+): { get(branding: Brand, locale: Locale): Shell; clear(): void } {
+  let currentBrandKey: string | undefined;
+  const currentBrandShells = new Map<Locale, Shell>();
+  return {
+    get(branding, locale) {
+      const brandKey = keyOf(branding);
+      if (brandKey !== currentBrandKey) {
+        currentBrandKey = brandKey;
+        currentBrandShells.clear();
+      }
+      if (currentBrandShells.has(locale)) return currentBrandShells.get(locale)!;
+      const shell = render(branding, locale);
+      currentBrandShells.set(locale, shell);
+      return shell;
+    },
+    clear() {
+      currentBrandKey = undefined;
+      currentBrandShells.clear();
+    },
+  };
+}

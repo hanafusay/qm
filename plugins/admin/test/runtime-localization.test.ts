@@ -334,7 +334,7 @@ test("Japanese user renderer localizes fallback copy and every displayed count",
       fileKind: fileKindCell?.text,
       commandPolicy: configValue("コマンドポリシー"),
       egress: configValue("外部通信の上書き"),
-      connectors: configValue("接続済みコネクター"),
+      connectors: configValue("接続済み連携"),
       conversationLocation: conversationTable?.headers[1],
     },
     {

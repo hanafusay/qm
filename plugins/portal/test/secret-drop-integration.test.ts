@@ -93,6 +93,8 @@ for (const expected of [
     heading: "Provide your stripe credential",
     placeholder: "Paste the secret here",
     submit: "Submit securely",
+    security:
+      "What you enter goes straight to the keychain over TLS and is encrypted at rest. It is never shown in chat. This link works once.",
     success: "Received — you can close this tab and return to the conversation.",
     error: "Could not save (the link may have expired, been used, or was missing a field).",
   },
@@ -101,6 +103,8 @@ for (const expected of [
     heading: "stripeの認証情報を入力",
     placeholder: "認証情報を貼り付けてください",
     submit: "安全に送信",
+    security:
+      "入力内容はTLSで送信され、認証情報として暗号化して保存されます。チャットには表示されません。このリンクは一度だけ使用できます。",
     success: "受け取りました。このタブを閉じて会話に戻れます。",
     error: "保存できませんでした。リンクが期限切れ、使用済み、または入力不足の可能性があります。",
   },
@@ -116,6 +120,7 @@ for (const expected of [
     assert.match(html, new RegExp(expected.heading));
     assert.match(html, new RegExp(expected.placeholder));
     assert.match(html, new RegExp(expected.submit));
+    assert.match(html, new RegExp(expected.security));
     assert.match(html, new RegExp(expected.success));
     assert.match(html, new RegExp(expected.error.replace(/[()]/g, "\\$&")));
     assert.doesNotMatch(html, new RegExp(drop.token));

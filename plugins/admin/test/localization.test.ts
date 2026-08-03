@@ -39,7 +39,7 @@ test("Admin catalogs have the same keys and named variables without HTML", () =>
   }
   assert.equal(
     adminMessage("ja", "auth.signedInAs", { principal: "alice@example.com" }),
-    "alice@example.com としてログイン中",
+    "alice@example.com としてサインイン中",
   );
 });
 
@@ -50,6 +50,41 @@ test("Japanese Admin workflow terms use the operator vocabulary", () => {
   assert.equal(adminMessage("ja", "navigation.keychain"), "認証情報");
   assert.equal(adminMessage("ja", "action.save"), "保存");
   assert.equal(adminMessage("ja", "action.cancel"), "キャンセル");
+});
+
+test("Japanese Admin names sign-in, connectors, and credentials consistently", () => {
+  assert.equal(adminMessage("ja", "signOut"), "サインアウト");
+  assert.equal(adminMessage("ja", "auth.signInTitle"), "ポータルからサインイン");
+  assert.equal(adminMessage("ja", "auth.signedInAs"), "{principal} としてサインイン中");
+  assert.equal(adminMessage("ja", "view.connectors"), "外部サービス連携");
+  assert.equal(adminMessage("ja", "users.connectorsLinked"), "接続済み連携");
+  assert.equal(adminMessage("ja", "connectors.manageDenied"), "組織管理者だけが外部サービス連携を管理できます。");
+  assert.equal(adminMessage("ja", "view.keychain"), "認証情報");
+});
+
+test("Admin current-brand shell cache discards entries from an older brand", async () => {
+  type Factory = <Brand, Shell>(
+    keyOf: (branding: Brand) => string,
+    render: (branding: Brand, locale: "en" | "ja") => Shell,
+  ) => { get(branding: Brand, locale: "en" | "ja"): Shell; clear(): void };
+  const localizer = (await import("../src/localization.ts")) as typeof import("../src/localization.ts") & {
+    createCurrentBrandShellCache?: Factory;
+  };
+  assert.equal(typeof localizer.createCurrentBrandShellCache, "function");
+  if (!localizer.createCurrentBrandShellCache) return;
+  let renders = 0;
+  const cache = localizer.createCurrentBrandShellCache(
+    (branding: { name: string }) => branding.name,
+    (branding, locale) => `${branding.name}/${locale}/${++renders}`,
+  );
+  const first = { name: "first" };
+  const second = { name: "second" };
+  assert.equal(cache.get(first, "en"), "first/en/1");
+  assert.equal(cache.get(first, "ja"), "first/ja/2");
+  assert.equal(cache.get(second, "en"), "second/en/3");
+  assert.equal(cache.get(second, "ja"), "second/ja/4");
+  assert.equal(cache.get(first, "en"), "first/en/5");
+  assert.equal(renders, 5);
 });
 
 test("Japanese Admin labels distinguish workspaces, policy targets, and permission targets", () => {

@@ -61,7 +61,7 @@ test("project and shared-context controls use their specific Japanese terms", ()
   assert.equal(webMessage("ja", "context.scopeChipProject"), "プロジェクト: {title}");
   assert.equal(webMessage("ja", "context.scopeChipChannel"), "チャンネル: {title}");
   assert.equal(webMessage("ja", "context.scopeChipGroup"), "グループDM: {title}");
-  assert.equal(webMessage("ja", "context.scopeChipPersonal"), "個人: {title}");
+  assert.equal(webMessage("ja", "context.scopeChipPersonal"), "個人プロジェクト: {title}");
   assert.equal(webMessage("ja", "navigation.crons"), "定期実行");
   assert.equal(webMessage("ja", "navigation.connectors"), "外部サービス連携");
   assert.equal(webMessage("ja", "navigation.keychain"), "認証情報");
@@ -69,6 +69,12 @@ test("project and shared-context controls use their specific Japanese terms", ()
   assert.equal(webMessage("ja", "deployment.publish"), "公開");
   assert.equal(webMessage("ja", "memory.search"), "記憶を検索");
   assert.equal(webMessage("ja", "skill.install"), "スキルを追加");
+});
+
+test("Japanese Web identifies the personal function as a personal project", () => {
+  assert.equal(webMessage("ja", "session.personal"), "個人プロジェクト");
+  assert.equal(webMessage("ja", "context.personalFallback"), "個人プロジェクト");
+  assert.equal(webMessage("ja", "context.scopeChipPersonal"), "個人プロジェクト: {title}");
 });
 
 test("Japanese web messages do not use 領域", () => {

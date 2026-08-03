@@ -18,7 +18,7 @@ import {
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { localizeAdminShell } from "./localization.ts";
+import { createCurrentBrandShellCache, localizeAdminShell } from "./localization.ts";
 
 const PORT = portFromEnv(8090);
 const ADMIN_BASE_PATH = (process.env.ADMIN_BASE_PATH ?? "").replace(/\/$/, "");
@@ -61,20 +61,20 @@ async function refreshBrandNow(): Promise<void> {
   await brandCache.refreshNow();
   shellCache.clear();
 }
-const shellCache = new Map<string, { html: string; gzip: Buffer; etag: string }>();
+const shellCache = createCurrentBrandShellCache(
+  (branding: OrgBranding) => JSON.stringify([branding.accent, branding.mark, branding.selfLabel]),
+  (branding, locale) => {
+    const localized = localizeAdminShell(ADMIN_TEMPLATE, locale).replaceAll("__ADMIN_BASE__", () => ADMIN_BASE_PATH);
+    const html = injectBranding(localized, branding);
+    return {
+      html,
+      gzip: gzipSync(html),
+      etag: `"${createHash("sha256").update(html).digest("hex").slice(0, 16)}"`,
+    };
+  },
+);
 function brandedShell(branding: OrgBranding, locale: Locale): { html: string; gzip: Buffer; etag: string } {
-  const key = JSON.stringify([branding.accent, branding.mark, branding.selfLabel, locale]);
-  const cached = shellCache.get(key);
-  if (cached) return cached;
-  const localized = localizeAdminShell(ADMIN_TEMPLATE, locale).replaceAll("__ADMIN_BASE__", () => ADMIN_BASE_PATH);
-  const html = injectBranding(localized, branding);
-  const shell = {
-    html,
-    gzip: gzipSync(html),
-    etag: `"${createHash("sha256").update(html).digest("hex").slice(0, 16)}"`,
-  };
-  shellCache.set(key, shell);
-  return shell;
+  return shellCache.get(branding, locale);
 }
 const ALLOW_UNSIGNED_TEST_IDENTITY =
   process.env.NODE_ENV === "test" && process.env.ALLOW_UNSIGNED_TEST_IDENTITY === "1";
