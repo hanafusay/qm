@@ -1,3 +1,7 @@
+import type { Locale } from "../../chassis/src/locale.ts";
+import { messageForCount } from "./i18n.ts";
+import { webMessage } from "./messages.ts";
+
 export interface KeychainGrantState {
   credentialId: string;
   status: string;
@@ -8,6 +12,12 @@ export interface KeychainCredentialState {
   id: string;
   kind?: string;
   expiresAt?: number;
+}
+
+export function keychainAccessModeLabel(mode: string, selected: Locale): string {
+  if (mode === "standing") return webMessage(selected, "connector.standing");
+  if (mode === "once" || mode === "one-time") return webMessage(selected, "connector.oneTime");
+  return mode;
 }
 
 export function isExpiredCredential(credential: KeychainCredentialState, at = Date.now()): boolean {
@@ -48,6 +58,14 @@ export function keychainSummary(
       credentials.filter((credential) => isExpiredCredential(credential, at)).length +
       asks.length,
   };
+}
+
+export function credentialDeleteImpact(count: number, scopes: string, selected: Locale): string {
+  return messageForCount(selected, count, "connector.deleteImpact.one", "connector.deleteImpact.other", { scopes });
+}
+
+export function connectorDisconnectImpact(count: number, selected: Locale): string {
+  return messageForCount(selected, count, "connector.disconnectImpact.one", "connector.disconnectImpact.other");
 }
 
 export interface KeychainMutation {

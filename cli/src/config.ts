@@ -3,6 +3,7 @@ import { isAbsolute, resolve } from "node:path";
 import { CliError, die, errMessage } from "./log.ts";
 import {
   AUTH_BROKER_ENV_KEYS,
+  DEFAULT_LOCALE_ENV,
   SERVICE_NAMES,
   VIRTUAL_SERVICE_NAMES,
   isDeclaredService,
@@ -132,6 +133,7 @@ export interface QmConfig {
   contract: typeof CONTRACT_VERSION;
   orgId: string;
   publicUrl: string;
+  defaultLocale?: "en" | "ja";
   apiUrl?: string;
   target: Target;
   model?: string;
@@ -529,6 +531,12 @@ function validate(raw: unknown, path: string): QmConfig {
   const target = o["target"];
   if (!isTarget(target)) throw new CliError(`${path}: "target" must be ${hostingProviderChoices()}`);
 
+  const configuredDefaultLocale = o["defaultLocale"];
+  if (configuredDefaultLocale !== undefined && configuredDefaultLocale !== "en" && configuredDefaultLocale !== "ja") {
+    throw new CliError(`${path}: "defaultLocale" must be "en" or "ja"`);
+  }
+  const defaultLocale = configuredDefaultLocale ?? "en";
+
   const servicesRaw = o["services"];
   if (!Array.isArray(servicesRaw)) throw new CliError(`${path}: "services" must be an array`);
   const services: DeclaredServiceName[] = [];
@@ -570,6 +578,11 @@ function validate(raw: unknown, path: string): QmConfig {
     "SECURITY_SCREEN_PROXY_ROLLOUT",
   ];
   for (const [service, values] of Object.entries(env)) {
+    if (values?.[DEFAULT_LOCALE_ENV] !== undefined) {
+      throw new CliError(
+        `${path}: "env.${service}.${DEFAULT_LOCALE_ENV}" is managed by the deployment target and cannot be overridden`,
+      );
+    }
     for (const name of [...managedSecurityScreenEnv, "SECURITY_SCREEN_PROXY_TOKEN"]) {
       if (values?.[name] !== undefined) {
         throw new CliError(`${path}: "env.${service}.${name}" is managed by securityScreen and cannot be overridden`);
@@ -577,6 +590,11 @@ function validate(raw: unknown, path: string): QmConfig {
     }
   }
   for (const [service, values] of Object.entries(secretEnv)) {
+    if (values?.[DEFAULT_LOCALE_ENV] !== undefined) {
+      throw new CliError(
+        `${path}: "secretEnv.${service}.${DEFAULT_LOCALE_ENV}" is managed by the deployment target and cannot be overridden`,
+      );
+    }
     for (const name of managedSecurityScreenEnv) {
       if (values?.[name] !== undefined) {
         throw new CliError(
@@ -596,19 +614,19 @@ function validate(raw: unknown, path: string): QmConfig {
   }
   for (const [service, values] of Object.entries(env)) {
     if (!isServiceName(service)) continue;
-    const portEnv = serviceDef(service).docker.portEnv;
-    if (values?.[portEnv] !== undefined) {
+    for (const name of [serviceDef(service).docker.portEnv]) {
+      if (values?.[name] === undefined) continue;
       throw new CliError(
-        `${path}: "env.${service}.${portEnv}" is managed by the deployment target and cannot be overridden`,
+        `${path}: "env.${service}.${name}" is managed by the deployment target and cannot be overridden`,
       );
     }
   }
   for (const [service, entries] of Object.entries(secretEnv)) {
     if (!isServiceName(service)) continue;
-    const portEnv = serviceDef(service).docker.portEnv;
-    if (entries?.[portEnv] !== undefined) {
+    for (const name of [serviceDef(service).docker.portEnv]) {
+      if (entries?.[name] === undefined) continue;
       throw new CliError(
-        `${path}: "secretEnv.${service}.${portEnv}" is managed by the deployment target and cannot be overridden`,
+        `${path}: "secretEnv.${service}.${name}" is managed by the deployment target and cannot be overridden`,
       );
     }
   }
@@ -638,6 +656,7 @@ function validate(raw: unknown, path: string): QmConfig {
     contract,
     orgId,
     publicUrl: publicUrl.replace(/\/$/, ""),
+    defaultLocale,
     target,
     services,
     plugins,
@@ -915,7 +934,14 @@ function validatePlugins(raw: unknown, path: string): PluginEntry[] {
       }
       entry.image = e["image"];
     }
-    if (e["env"] !== undefined) entry.env = validateStringMap(e["env"], path, `plugins[${i}].env`);
+    if (e["env"] !== undefined) {
+      entry.env = validateStringMap(e["env"], path, `plugins[${i}].env`);
+      if (entry.env[DEFAULT_LOCALE_ENV] !== undefined) {
+        throw new CliError(
+          `${path}: plugins[${i}].env.${DEFAULT_LOCALE_ENV} is managed by the deployment target and cannot be overridden`,
+        );
+      }
+    }
     if (e["secrets"] !== undefined) entry.secrets = validatePluginSecrets(e["secrets"], path, i);
     return entry;
   });
@@ -930,6 +956,11 @@ function validatePluginSecrets(raw: unknown, path: string, pluginIndex: number):
     const name = value["name"];
     if (typeof name !== "string" || !isEnvVarName(name))
       throw new CliError(`${path}: ${field}.name must be a valid env var name`);
+    if (name === DEFAULT_LOCALE_ENV) {
+      throw new CliError(
+        `${path}: ${field}.name.${DEFAULT_LOCALE_ENV} is managed by the deployment target and cannot be overridden`,
+      );
+    }
     if (seen.has(name)) throw new CliError(`${path}: duplicate plugin secret ${JSON.stringify(name)}`);
     seen.add(name);
     const out: PluginSecret = { name };

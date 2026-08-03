@@ -6,6 +6,7 @@ import { browserRenderableImage, formatBytes, icon, relTime } from "./ui";
 import { contextsState, ensureContexts, personalScopeId, scopeChip, scopeFilterControl } from "./contexts";
 import { appState } from "./shell";
 import { fileListNeedsAllPages } from "./file-list";
+import { t } from "./i18n";
 
 interface FileItem {
   id: string;
@@ -49,6 +50,12 @@ function typeOf(f: FileItem): "image" | "document" | "other" {
   return "other";
 }
 
+function fileKindLabel(kind: FileRow["kind"]): string {
+  if (kind === "Created") return t("file.kind.created");
+  if (kind === "Uploaded") return t("file.kind.uploaded");
+  return t("file.kind.shared");
+}
+
 function selectControl(
   label: string,
   value: string,
@@ -86,17 +93,17 @@ function drawFiles(loading = false): void {
   }
   const visible = visibleFiles();
   const filtered = Boolean(filesScope || filesQuery.trim() || filesType !== "all" || filesOwnership !== "all");
-  let dropLabel = "Drop files here or choose files";
-  if (filesDragActive) dropLabel = "Drop files";
-  else if (filesUploading) dropLabel = "Uploading…";
-  const status = filesNotice || (loading && !fileRows.length ? "Loading files…" : "");
+  let dropLabel = t("file.dropChoose");
+  if (filesDragActive) dropLabel = t("file.drop");
+  else if (filesUploading) dropLabel = t("file.uploading");
+  const status = filesNotice || (loading && !fileRows.length ? t("file.loading") : "");
   const uploadTarget = filesScope ?? personalScopeId();
   render(
     html`
       <div class="list-page-head">
         <div>
-          <h1 class="pane-title">Files</h1>
-          <div class="pane-subtitle">Files created, uploaded, or shared with you</div>
+          <h1 class="pane-title">${t("file.title")}</h1>
+          <div class="pane-subtitle">${t("file.subtitle")}</div>
         </div>
         <div class="list-page-actions">
           ${scopeFilterControl(filesScope, (s) => {
@@ -105,7 +112,7 @@ function drawFiles(loading = false): void {
             filesNextCursor = null;
             void loadFiles(appState.viewRenderSeq);
           })}<button class="btn primary" type="button" ?disabled=${filesUploading} @click=${pickFiles}>
-            ${icon(Upload, 15)}<span>Upload</span>
+            ${icon(Upload, 15)}<span>${t("file.upload")}</span>
           </button>
         </div>
       </div>
@@ -124,11 +131,11 @@ function drawFiles(loading = false): void {
       </button>
       <div class="list-toolbar">
         <label class="list-search"
-          ><span class="sr-only">Search files</span
+          ><span class="sr-only">${t("file.searchLabel")}</span
           ><input
             type="search"
-            aria-label="Search files"
-            placeholder="Search file names and types…"
+            aria-label=${t("file.searchLabel")}
+            placeholder=${t("file.search")}
             .value=${filesQuery}
             @input=${(e: Event) => {
               filesQuery = (e.currentTarget as HTMLInputElement).value;
@@ -137,12 +144,12 @@ function drawFiles(loading = false): void {
             }}
         /></label>
         ${selectControl(
-          "Ownership",
+          t("file.ownership"),
           filesOwnership,
           [
-            ["all", "All files"],
-            ["owned", "Yours"],
-            ["shared", "Shared"],
+            ["all", t("file.allFiles")],
+            ["owned", t("file.yours")],
+            ["shared", t("file.shared")],
           ],
           (v) => {
             filesOwnership = v as typeof filesOwnership;
@@ -151,13 +158,13 @@ function drawFiles(loading = false): void {
           },
         )}
         ${selectControl(
-          "Type",
+          t("file.type"),
           filesType,
           [
-            ["all", "All types"],
-            ["image", "Images"],
-            ["document", "Documents"],
-            ["other", "Other"],
+            ["all", t("file.allTypes")],
+            ["image", t("file.images")],
+            ["document", t("file.documents")],
+            ["other", t("file.other")],
           ],
           (v) => {
             filesType = v as typeof filesType;
@@ -166,12 +173,12 @@ function drawFiles(loading = false): void {
           },
         )}
         ${selectControl(
-          "Sort",
+          t("file.sort"),
           filesSort,
           [
-            ["newest", "Newest"],
-            ["oldest", "Oldest"],
-            ["name", "Name"],
+            ["newest", t("file.newest")],
+            ["oldest", t("file.oldest")],
+            ["name", t("file.name")],
           ],
           (v) => {
             filesSort = v as typeof filesSort;
@@ -180,8 +187,8 @@ function drawFiles(loading = false): void {
           },
         )}
       </div>
-      ${visible.length ? html`<div class="list-rows file-list">${visible.map(fileRow)}</div>` : html`<div class="empty compact">${filtered ? "No files match these filters." : "No files yet. Upload one here or ask the agent to create one."}</div>`}
-      ${filesNextCursor ? html`<div class="list-footer"><button class="btn" type="button" ?disabled=${filesLoadingMore} @click=${() => void loadMoreFiles()}>${filesLoadingMore ? "Loading…" : "Load more"}</button></div>` : nothing}
+      ${visible.length ? html`<div class="list-rows file-list">${visible.map(fileRow)}</div>` : html`<div class="empty compact">${filtered ? t("file.noMatches") : t("file.empty")}</div>`}
+      ${filesNextCursor ? html`<div class="list-footer"><button class="btn" type="button" ?disabled=${filesLoadingMore} @click=${() => void loadMoreFiles()}>${filesLoadingMore ? t("loading") : t("file.loadMore")}</button></div>` : nothing}
     `,
     filesHost,
   );
@@ -194,9 +201,10 @@ function fileRow(f: FileRow) {
     <span class="file-row-icon">${icon(isImage ? Image : File, 17)}</span>
     <span class="list-row-title"><span>${f.name}</span><span class="file-row-type">${f.mimetype}</span></span>
     <span class="list-row-meta"
-      >${scopeChip(fileScope(f))}<span class="badge">${f.kind}</span><span>${formatBytes(f.sizeBytes)}</span
+      >${scopeChip(fileScope(f))}<span class="badge">${fileKindLabel(f.kind)}</span
+      ><span>${formatBytes(f.sizeBytes)}</span
       ><span>${relTime(f.createdAt)}</span
-      >${f.openable ? html`<a class="btn compact" href=${contentUrl} target="_blank" rel="noreferrer">Open</a>` : html`<span>Unavailable</span>`}</span
+      >${f.openable ? html`<a class="btn compact" href=${contentUrl} target="_blank" rel="noreferrer">${t("file.open")}</a>` : html`<span>${t("file.unavailable")}</span>`}</span
     >
   </article>`;
 }
@@ -204,6 +212,18 @@ function fileRow(f: FileRow) {
 async function fileSha256(file: globalThis.File): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export async function uploadFailureMessage(response: Response): Promise<string> {
+  const text = await response.text();
+  const fallback = t("file.uploadFailed", { status: response.status });
+  try {
+    const parsed = JSON.parse(text) as { message?: string; error?: string } & SigninRequired;
+    if (response.status === 401) reportSigninRequired(parsed);
+    return parsed.message ?? parsed.error ?? fallback;
+  } catch {
+    return text.trim() || fallback;
+  }
 }
 
 async function uploadOne(file: globalThis.File): Promise<void> {
@@ -218,16 +238,7 @@ async function uploadOne(file: globalThis.File): Promise<void> {
     body: file,
   });
   if (!r.ok) {
-    const text = await r.text();
-    let message = `Upload failed (${r.status})`;
-    try {
-      const parsed = JSON.parse(text) as { message?: string; error?: string } & SigninRequired;
-      if (r.status === 401) reportSigninRequired(parsed);
-      message = parsed.message ?? parsed.error ?? message;
-    } catch {
-      if (text.trim()) message = text.trim();
-    }
-    throw new Error(message);
+    throw new Error(await uploadFailureMessage(r));
   }
 }
 
@@ -235,7 +246,10 @@ async function uploadFiles(files: globalThis.File[]): Promise<void> {
   const picked = files.filter((f) => f.size >= 0);
   if (!picked.length || filesUploading) return;
   filesUploading = true;
-  filesNotice = `Uploading ${picked.length} ${picked.length === 1 ? "file" : "files"}…`;
+  filesNotice = t("file.uploadingCount", {
+    count: picked.length,
+    unit: t(picked.length === 1 ? "file.unit.one" : "file.unit.other"),
+  });
   drawFiles();
   let uploaded = 0;
   try {
@@ -243,10 +257,13 @@ async function uploadFiles(files: globalThis.File[]): Promise<void> {
       await uploadOne(file);
       uploaded++;
     }
-    filesNotice = `Uploaded ${picked.length} ${picked.length === 1 ? "file" : "files"}.`;
+    filesNotice = t("file.uploadedCount", {
+      count: picked.length,
+      unit: t(picked.length === 1 ? "file.unit.one" : "file.unit.other"),
+    });
     await loadFiles(appState.viewRenderSeq);
   } catch (e) {
-    filesNotice = `${uploaded ? `Uploaded ${uploaded} of ${picked.length}. ` : ""}${errMessage(e, "Upload failed.")}`;
+    filesNotice = `${uploaded ? t("file.uploadedProgress", { uploaded, count: picked.length }) : ""}${errMessage(e, t("file.uploadFailedUnknown"))}`;
     if (uploaded) await loadFiles(appState.viewRenderSeq);
     else drawFiles();
   } finally {
@@ -322,7 +339,7 @@ async function loadMoreFiles(): Promise<void> {
     filesNextCursor = page.nextCursor;
   } catch (e) {
     if (requestSeq !== filesRequestSeq) return;
-    filesNotice = errMessage(e, "Failed to load more files.");
+    filesNotice = errMessage(e, t("file.loadMoreFailed"));
   }
   if (requestSeq !== filesRequestSeq) return;
   filesLoadingMore = false;
@@ -355,7 +372,7 @@ async function loadAllFiles(): Promise<void> {
     }
   } catch (e) {
     if (requestSeq !== filesRequestSeq) return;
-    filesNotice = errMessage(e, "Failed to load all matching files.");
+    filesNotice = errMessage(e, t("file.loadAllFailed"));
   }
   if (requestSeq !== filesRequestSeq) return;
   filesLoadAllQueued = false;
@@ -377,7 +394,7 @@ async function loadFiles(seq: number): Promise<void> {
     void loadAllFiles();
   } catch (e) {
     if (requestSeq !== filesRequestSeq || seq !== appState.viewRenderSeq || appState.currentView !== "files") return;
-    filesNotice = errMessage(e, "Failed to load files.");
+    filesNotice = errMessage(e, t("file.loadFailed"));
   }
   drawFiles();
 }

@@ -25,9 +25,10 @@ function configWith(body: string): QmConfig {
   }
 }
 
-function configText(over: { services?: string; env?: string } = {}): string {
+function configText(over: { services?: string; env?: string; defaultLocale?: "en" | "ja" } = {}): string {
+  const defaultLocale = over.defaultLocale === undefined ? "" : `, "defaultLocale": "${over.defaultLocale}"`;
   return `{
-    "contract": 1, "orgId": "acme", "publicUrl": "https://agent.example.com", "target": "docker",
+    "contract": 1, "orgId": "acme", "publicUrl": "https://agent.example.com", "target": "docker"${defaultLocale},
     "services": ${over.services ?? '["core", "web-ui", "admin", "portal", "auth"]'},
     "plugins": [], "skills": [],
     "env": ${over.env ?? '{ "auth": { "AUTH_EMAIL_TRANSPORT": "resend", "AUTH_ALLOWED_EMAIL_DOMAIN": "example.com" } }'}
@@ -118,6 +119,59 @@ test("docker and AWS wire the broker with parity", () => {
   );
   assert.equal(serviceEnvironment(aws, "auth").AUTH_ISSUER, "https://agent.example.com/idp");
   assert.equal(serviceEnvironment(aws, "auth").PORT, "8080");
+});
+
+test("Docker and AWS pass the default locale only to localized surfaces", () => {
+  const docker = configWith(configText());
+  for (const service of ["web-ui", "admin", "portal", "auth"] as const) {
+    assert.equal(dockerServiceEnv(docker, service).QM_DEFAULT_LOCALE, "en");
+  }
+  assert.equal(dockerServiceEnv(docker, "core").QM_DEFAULT_LOCALE, undefined);
+
+  const aws = configWith(`{
+    "contract": 1, "orgId": "acme", "publicUrl": "https://agent.example.com", "target": "aws",
+    "services": ["core", "web-ui", "admin", "portal", "auth"], "plugins": [], "skills": [],
+    "env": { "core": { "AWS_DEPLOY_IMAGE": "acme-sandbox" }, "auth": { "AUTH_EMAIL_TRANSPORT": "smtp", "AUTH_ALLOWED_EMAIL_DOMAIN": "example.com" } },
+    "aws": {
+      "accountId": "123456789012", "region": "us-west-2", "cluster": "acme-qm",
+      "deployRoleArn": "arn:aws:iam::123456789012:role/acme-qm-github-deploy",
+      "secretsPrefix": "acme/qm/", "imageLabel": "latest",
+      "networking": { "cloudMapNamespace": "acme.internal" },
+      "services": {
+        "core": { "ecrRepository": "acme-qm-core", "ecsService": "acme-qm-core", "cpu": 2048, "memory": 4096 },
+        "web-ui": { "ecrRepository": "acme-qm-web-ui", "ecsService": "acme-qm-web-ui", "cpu": 512, "memory": 1024 },
+        "admin": { "ecrRepository": "acme-qm-admin", "ecsService": "acme-qm-admin", "cpu": 512, "memory": 1024 },
+        "portal": { "ecrRepository": "acme-qm-portal", "ecsService": "acme-qm-portal", "cpu": 512, "memory": 1024 },
+        "auth": { "ecrRepository": "acme-qm-auth", "ecsService": "acme-qm-auth", "cpu": 256, "memory": 512 }
+      }
+    }
+  }`);
+  for (const service of ["web-ui", "admin", "portal", "auth"] as const) {
+    assert.equal(serviceEnvironment(aws, service).QM_DEFAULT_LOCALE, "en");
+  }
+  assert.equal(serviceEnvironment(aws, "core").QM_DEFAULT_LOCALE, undefined);
+});
+
+test("Docker keeps the English deployment default for configs that omit defaultLocale", () => {
+  const config = configWith(configText());
+  delete config.defaultLocale;
+  for (const service of ["web-ui", "admin", "portal", "auth"] as const) {
+    assert.equal(dockerServiceEnv(config, service).QM_DEFAULT_LOCALE, "en");
+  }
+});
+
+test("configured Japanese locale reaches every localized Docker and Fly service", () => {
+  const docker = configWith(configText({ defaultLocale: "ja" }));
+  for (const service of ["web-ui", "admin", "portal", "auth"] as const) {
+    assert.equal(dockerServiceEnv(docker, service).QM_DEFAULT_LOCALE, "ja");
+  }
+  assert.equal(dockerServiceEnv(docker, "core").QM_DEFAULT_LOCALE, undefined);
+
+  const fly = { ...brokerConfig(), defaultLocale: "ja" as const };
+  for (const service of ["web-ui", "admin", "portal", "auth"] as const) {
+    assert.match(derivedTomlFor(fly, service, repoRoot), /^\s*QM_DEFAULT_LOCALE = "ja"$/m);
+  }
+  assert.doesNotMatch(derivedTomlFor(fly, "core", repoRoot), /^\s*QM_DEFAULT_LOCALE = /m);
 });
 
 test("the broker's generated secrets reach both sides under the right names", () => {

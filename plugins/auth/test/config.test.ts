@@ -127,7 +127,20 @@ test("the issuer path drives the public form action", () => {
   assert.equal(readConfig(testEnv({ AUTH_ISSUER: "https://agent.example.test" })).publicPath, "");
 });
 
+test("the deployment locale is normalized without hiding whether it was configured", () => {
+  const absent = readConfig(testEnv());
+  assert.equal(absent.defaultLocale, "en");
+  assert.equal(absent.defaultLocaleConfigured, false);
+  const japanese = readConfig(testEnv({ QM_DEFAULT_LOCALE: "ja-JP" }));
+  assert.equal(japanese.defaultLocale, "ja");
+  assert.equal(japanese.defaultLocaleConfigured, true);
+  const invalid = readConfig(testEnv({ QM_DEFAULT_LOCALE: "not-a-locale" }));
+  assert.equal(invalid.defaultLocale, "en");
+  assert.equal(invalid.defaultLocaleConfigured, false);
+});
+
 test("`node src/index.ts` refuses to boot on a placeholder configuration and serves /healthz once fixed", async () => {
+  const authIndex = new URL("../src/index.ts", import.meta.url).href;
   const base = {
     ...process.env,
     ...testEnv({ CORE_SIGNING_SECRET: "a".repeat(48) }),
@@ -135,9 +148,8 @@ test("`node src/index.ts` refuses to boot on a placeholder configuration and ser
   } as NodeJS.ProcessEnv;
   const refuses = spawnSync(
     process.execPath,
-    ["--input-type=module", "-e", "import('./src/index.ts').then(m => m.bootChecks())"],
+    ["--input-type=module", "-e", `import(${JSON.stringify(authIndex)}).then(m => m.bootChecks())`],
     {
-      cwd: process.cwd(),
       env: { ...base, AUTH_CLIENT_SECRET: "replace-me" },
       encoding: "utf8",
     },
@@ -151,9 +163,9 @@ test("`node src/index.ts` refuses to boot on a placeholder configuration and ser
     [
       "--input-type=module",
       "-e",
-      `import('./src/index.ts').then(async (m) => { await m.startServer(); const r = await fetch('http://127.0.0.1:${PORT}/healthz'); console.log(r.status); process.exit(0); })`,
+      `import(${JSON.stringify(authIndex)}).then(async (m) => { await m.startServer(); const r = await fetch('http://127.0.0.1:${PORT}/healthz'); console.log(r.status); process.exit(0); })`,
     ],
-    { cwd: process.cwd(), env: { ...base, PORT }, encoding: "utf8" },
+    { env: { ...base, PORT }, encoding: "utf8" },
   );
   assert.equal(child.status, 0, child.stderr);
   assert.match(child.stdout, /200/);

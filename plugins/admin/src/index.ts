@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { signedRequestHeaders, withSourceAuthNonce } from "../../chassis/src/core-client.ts";
 import { json, readBody, cookie } from "../../chassis/src/http.ts";
 import { createBrandingCache, injectBranding, type OrgBranding } from "../../chassis/src/branding.ts";
+import { LOCALE_HEADER, resolveLocale, type Locale } from "../../chassis/src/locale.ts";
 import { verifyPortalIdentity, PORTAL_IDENTITY_HEADER } from "../../chassis/src/portal-identity.ts";
 import {
   CORE_API_URL as CORE,
@@ -17,17 +18,17 @@ import {
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
+import { createCurrentBrandShellCache, localizeAdminShell } from "./localization.ts";
 
 const PORT = portFromEnv(8090);
 const ADMIN_BASE_PATH = (process.env.ADMIN_BASE_PATH ?? "").replace(/\/$/, "");
+const DEFAULT_LOCALE = process.env.QM_DEFAULT_LOCALE;
 function signedHeaders(method: string, corePath: string, rawBody: string): Record<string, string> {
   return signedRequestHeaders(CORE_SIGNING_SECRET, method, corePath, rawBody, { "content-type": "application/json" });
 }
 
-const BASE_HTML = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../public/index.html"),
-  "utf8",
-).replaceAll("__ADMIN_BASE__", () => ADMIN_BASE_PATH);
+const ADMIN_TEMPLATE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../public/index.html"), "utf8");
+const BASE_HTML = ADMIN_TEMPLATE.replaceAll("__ADMIN_BASE__", () => ADMIN_BASE_PATH);
 const ADMIN_SCRIPT = BASE_HTML.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
 const ADMIN_CSP = [
   "default-src 'self'",
@@ -58,20 +59,22 @@ async function fetchBrand(): Promise<OrgBranding> {
 const brandCache = createBrandingCache(fetchBrand);
 async function refreshBrandNow(): Promise<void> {
   await brandCache.refreshNow();
-  shellCache = null;
+  shellCache.clear();
 }
-let shellCache: { key: string; html: string; gzip: Buffer; etag: string } | null = null;
-function brandedShell(branding: OrgBranding): { html: string; gzip: Buffer; etag: string } {
-  const key = JSON.stringify([branding.accent, branding.mark, branding.selfLabel]);
-  if (shellCache?.key === key) return shellCache;
-  const html = injectBranding(BASE_HTML, branding);
-  shellCache = {
-    key,
-    html,
-    gzip: gzipSync(html),
-    etag: `"${createHash("sha256").update(html).digest("hex").slice(0, 16)}"`,
-  };
-  return shellCache;
+const shellCache = createCurrentBrandShellCache(
+  (branding: OrgBranding) => JSON.stringify([branding.accent, branding.mark, branding.selfLabel]),
+  (branding, locale) => {
+    const localized = localizeAdminShell(ADMIN_TEMPLATE, locale).replaceAll("__ADMIN_BASE__", () => ADMIN_BASE_PATH);
+    const html = injectBranding(localized, branding);
+    return {
+      html,
+      gzip: gzipSync(html),
+      etag: `"${createHash("sha256").update(html).digest("hex").slice(0, 16)}"`,
+    };
+  },
+);
+function brandedShell(branding: OrgBranding, locale: Locale): { html: string; gzip: Buffer; etag: string } {
+  return shellCache.get(branding, locale);
 }
 const ALLOW_UNSIGNED_TEST_IDENTITY =
   process.env.NODE_ENV === "test" && process.env.ALLOW_UNSIGNED_TEST_IDENTITY === "1";
@@ -315,9 +318,15 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   const method = req.method ?? "GET";
 
   const serveShell = async (): Promise<void> => {
-    const shell = brandedShell(await brandCache.forRender());
+    const locale = resolveLocale({
+      explicit: req.headers[LOCALE_HEADER],
+      defaultLocale: DEFAULT_LOCALE,
+      acceptLanguage: req.headers["accept-language"],
+    });
+    const shell = brandedShell(await brandCache.forRender(), locale);
+    const vary = "x-qm-locale, accept-language, accept-encoding";
     if (req.headers["if-none-match"] === shell.etag) {
-      res.writeHead(304, { etag: shell.etag, "cache-control": "no-cache" });
+      res.writeHead(304, { etag: shell.etag, "cache-control": "no-cache", vary });
       return void res.end();
     }
     const gz = acceptsGzip(req);
@@ -325,6 +334,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       "content-type": "text/html; charset=utf-8",
       etag: shell.etag,
       "cache-control": "no-cache",
+      vary,
       ...(gz ? { "content-encoding": "gzip" } : {}),
     });
     return void res.end(gz ? shell.gzip : shell.html);

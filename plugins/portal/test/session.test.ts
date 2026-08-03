@@ -177,6 +177,9 @@ test("cookie helpers set HttpOnly/SameSite/Path and Secure only when asked", () 
 test("readCookie extracts a named cookie and survives other pairs", () => {
   const header = "a=1; portal_session=abc.def; webuiuser=EVIL";
   assert.equal(readCookie(header, "portal_session"), "abc.def");
+  assert.equal(readCookie(["a=1", "qm_locale=ja"], "qm_locale"), "ja");
+  assert.equal(readCookie("qm_locale=ja; qm_locale=en", "qm_locale"), "ja");
+  assert.equal(readCookie("qm_locale=%E0%A4%A", "qm_locale"), null);
   assert.equal(readCookie(header, "missing"), null);
   assert.equal(readCookie(undefined, "portal_session"), null);
 });
@@ -235,6 +238,8 @@ test("sanitizeReturnTo accepts same-origin paths and rejects redirect escapes", 
     "https:/evil.com",
     "/%2f%2fevil.com",
     "/%5cevil",
+    "/a/..//evil.com/x",
+    "/%2e%2e//evil.com/x",
     "/	//evil",
     "",
     "x/y",

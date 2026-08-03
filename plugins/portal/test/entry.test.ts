@@ -1,12 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const PORTAL_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 test("`node src/index.ts` (relative entry, like Docker) binds the port and serves /healthz", async () => {
   const PORT = "18097";
   const child = spawn(process.execPath, ["src/index.ts"], {
-    cwd: process.cwd(),
-    env: { ...process.env, PORT, PORTAL_PUBLIC_URL: `http://localhost:${PORT}`, NODE_ENV: "test" },
+    cwd: PORTAL_ROOT,
+    env: {
+      ...process.env,
+      PORT,
+      PORTAL_PUBLIC_URL: `http://localhost:${PORT}`,
+      QM_DEFAULT_LOCALE: "ja",
+      NODE_ENV: "test",
+    },
     stdio: "ignore",
   });
   try {
@@ -24,6 +33,11 @@ test("`node src/index.ts` (relative entry, like Docker) binds the port and serve
       }
     }
     assert.ok(ok, "portal entry should bind the port and answer /healthz");
+    const callback = await fetch(`http://localhost:${PORT}/auth/callback?code=x&state=y`);
+    assert.equal(callback.status, 400);
+    const page = await callback.text();
+    assert.match(page, /<html lang="ja">/);
+    assert.match(page, /サインインできませんでした/);
   } finally {
     child.kill("SIGKILL");
   }
@@ -49,7 +63,7 @@ test("production boot requires an explicit OIDC tenant trust boundary", () => {
     const env = { ...baseEnv };
     if (value !== undefined) env.PORTAL_EXPECTED_TEAM_ID = value;
     const missing = spawnSync(process.execPath, ["--input-type=module", "-e", command], {
-      cwd: process.cwd(),
+      cwd: PORTAL_ROOT,
       env,
       encoding: "utf8",
     });
@@ -63,7 +77,7 @@ test("production boot requires an explicit OIDC tenant trust boundary", () => {
     { OIDC_ALLOWED_EMAIL_DOMAIN: "example.com", PORTAL_EXPECTED_TEAM_ID: "T123" },
   ]) {
     const accepted = spawnSync(process.execPath, ["--input-type=module", "-e", command], {
-      cwd: process.cwd(),
+      cwd: PORTAL_ROOT,
       env: { ...baseEnv, ...gate },
       encoding: "utf8",
     });
@@ -89,7 +103,7 @@ test("production boot requires an explicit JWKS URI for custom issuers", () => {
   };
   delete baseEnv.OIDC_JWKS_URI;
   const missing = spawnSync(process.execPath, ["--input-type=module", "-e", command], {
-    cwd: process.cwd(),
+    cwd: PORTAL_ROOT,
     env: baseEnv,
     encoding: "utf8",
   });
@@ -97,7 +111,7 @@ test("production boot requires an explicit JWKS URI for custom issuers", () => {
   assert.match(missing.stderr, /OIDC_JWKS_URI is required/);
 
   const accepted = spawnSync(process.execPath, ["--input-type=module", "-e", command], {
-    cwd: process.cwd(),
+    cwd: PORTAL_ROOT,
     env: { ...baseEnv, OIDC_JWKS_URI: "https://auth.example.com/jwks.json" },
     encoding: "utf8",
   });
@@ -122,14 +136,14 @@ test("a session TTL above the default max ceiling still boots, but a contradicto
   delete baseEnv.PORTAL_SESSION_MAX_TTL_S;
 
   const derived = spawnSync(process.execPath, ["--input-type=module", "-e", command], {
-    cwd: process.cwd(),
+    cwd: PORTAL_ROOT,
     env: baseEnv,
     encoding: "utf8",
   });
   assert.equal(derived.status, 0, derived.stderr);
 
   const contradictory = spawnSync(process.execPath, ["--input-type=module", "-e", command], {
-    cwd: process.cwd(),
+    cwd: PORTAL_ROOT,
     env: { ...baseEnv, PORTAL_SESSION_MAX_TTL_S: "86400" },
     encoding: "utf8",
   });
@@ -156,7 +170,7 @@ test("production accepts cleartext OIDC only on private-network hosts, and only 
     AUTH_BROKER_UPSTREAM: "http://acme-auth.internal:8080",
   };
   const boot = (env: NodeJS.ProcessEnv): { status: number | null; stderr: string } =>
-    spawnSync(process.execPath, ["--input-type=module", "-e", command], { cwd: process.cwd(), env, encoding: "utf8" });
+    spawnSync(process.execPath, ["--input-type=module", "-e", command], { cwd: PORTAL_ROOT, env, encoding: "utf8" });
 
   const wired = boot(brokerEnv);
   assert.equal(wired.status, 0, wired.stderr);

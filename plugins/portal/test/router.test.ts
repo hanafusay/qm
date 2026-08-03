@@ -4,7 +4,14 @@ import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 
 let whoamiProbes = 0;
+let failWhoami = false;
 let lastConsentClicker: string | null = null;
+let consentResult: Record<string, unknown> = {
+  status: "authorize",
+  authorizeUrl: "https://accounts.google.test/o/oauth2?x=1",
+};
+let selfConnectResult: Record<string, unknown> = {};
+let failSecretDrop = false;
 let lastImpersonateIdentity: string | null = null;
 let agentApiRequests = 0;
 const VALID_AGENT_CAPABILITY = "valid.agent.capability";
@@ -41,12 +48,18 @@ const upstream = createServer((req: IncomingMessage, res) => {
   if (typeof req.url === "string" && req.url.startsWith("/v1/connectors/oauth/consent/redeem/")) {
     lastConsentClicker = (req.headers["x-consent-clicker"] as string | undefined) ?? null;
     res.writeHead(200, { "content-type": "application/json" });
-    return void res.end(
-      JSON.stringify({ status: "authorize", authorizeUrl: "https://accounts.google.test/o/oauth2?x=1" }),
-    );
+    return void res.end(JSON.stringify(consentResult));
+  }
+  if (typeof req.url === "string" && req.url.startsWith("/v1/connectors/oauth/google/start?")) {
+    res.writeHead(200, { "content-type": "application/json" });
+    return void res.end(JSON.stringify(selfConnectResult));
+  }
+  if (typeof req.url === "string" && req.url.startsWith("/v1/keychain/drops/") && failSecretDrop) {
+    return void res.destroy();
   }
   if (req.url === "/api/whoami") {
     whoamiProbes++;
+    if (failWhoami) return void res.destroy();
     const m = (req.headers.cookie ?? "").match(/admin=([^;]+)/);
     const sub = m ? decodeURIComponent(m[1] ?? "") : "";
     res.writeHead(200, { "content-type": "application/json" });
@@ -82,7 +95,7 @@ process.env.WEB_UI_UPSTREAM = upstreamUrl;
 process.env.ADMIN_UPSTREAM = upstreamUrl;
 process.env.CORE_API_URL = upstreamUrl;
 
-const { server } = await import("../src/index.ts");
+const { server, localeOf } = await import("../src/index.ts");
 const { deriveKey, seal, open } = await import("../src/session.ts");
 await new Promise<void>((r) => server.listen(0, r));
 const base = `http://localhost:${(server.address() as AddressInfo).port}`;
@@ -102,6 +115,79 @@ test.after(() => {
 test("healthz is unauthenticated", async () => {
   const r = await fetch(`${base}/healthz`);
   assert.equal(r.status, 200);
+});
+
+test("locale preference is validated, durable, and safely redirected", async () => {
+  const response = await fetch(`${base}/locale`, {
+    method: "POST",
+    redirect: "manual",
+    headers: {
+      origin: PUBLIC,
+      "sec-fetch-site": "same-origin",
+      "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+    },
+    body: new URLSearchParams({ locale: "ja", returnTo: "/admin/?tab=users" }),
+  });
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.get("location"), "/admin/?tab=users");
+  assert.match(response.headers.get("set-cookie") ?? "", /qm_locale=ja/);
+  assert.match(response.headers.get("set-cookie") ?? "", /HttpOnly/);
+  assert.match(response.headers.get("set-cookie") ?? "", /SameSite=Lax/);
+  assert.match(response.headers.get("set-cookie") ?? "", /Path=\//);
+  assert.match(response.headers.get("set-cookie") ?? "", /Max-Age=31536000/);
+});
+
+test("locale preference requires form-urlencoded content", async () => {
+  for (const contentType of ["text/plain", "application/json"]) {
+    const response = await fetch(`${base}/locale`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { origin: PUBLIC, "content-type": contentType },
+      body: "locale=ja",
+    });
+    assert.equal(response.status, 415, contentType);
+  }
+});
+
+test("locale preference rejects invalid values and cross-origin writes", async () => {
+  const invalid = await fetch(`${base}/locale`, {
+    method: "POST",
+    headers: { origin: PUBLIC, "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ locale: "fr" }),
+  });
+  assert.equal(invalid.status, 400);
+
+  const crossOrigin = await fetch(`${base}/locale`, {
+    method: "POST",
+    headers: { origin: "https://evil.test", "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ locale: "en" }),
+  });
+  assert.equal(crossOrigin.status, 403);
+});
+
+test("locale preference contains redirect escapes and request bodies", async () => {
+  const escaped = await fetch(`${base}/locale`, {
+    method: "POST",
+    redirect: "manual",
+    headers: { origin: PUBLIC, "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ locale: "en", returnTo: "https://evil.test/steal" }),
+  });
+  assert.equal(escaped.status, 303);
+  assert.equal(escaped.headers.get("location"), "/");
+
+  const oversized = await fetch(`${base}/locale`, {
+    method: "POST",
+    headers: { origin: PUBLIC, "content-type": "application/x-www-form-urlencoded" },
+    body: `locale=ja&returnTo=/${"x".repeat(1024)}`,
+  });
+  assert.equal(oversized.status, 413);
+});
+
+test("locale resolution prefers the cookie and then the browser when no deployment default exists", () => {
+  const request = (headers: Record<string, string | undefined>): IncomingMessage => ({ headers }) as IncomingMessage;
+  assert.equal(localeOf(request({ cookie: "qm_locale=en", "accept-language": "ja-JP" })), "en");
+  assert.equal(localeOf(request({ "accept-language": "ja-JP" })), "ja");
+  assert.equal(localeOf(request({})), "en");
 });
 
 test("favicon: served unauthenticated as an SVG of the pirate-flag emoji", async () => {
@@ -133,9 +219,10 @@ test("legacy /web-ui prefix redirects permanently to the same path at the root",
 test("valid session: upstream receives ONLY the synthesized cookie, prefix stripped, forged identity dropped", async () => {
   const r = await fetch(`${base}/web-ui/api/x?q=1`, {
     headers: {
-      cookie: `${sessionCookie("U1")}; webuiuser=EVIL; admin=EVIL`,
+      cookie: `${sessionCookie("U1")}; qm_locale=ja; webuiuser=EVIL; admin=EVIL`,
       "x-as-principal": "EVIL",
       "x-admin-actor": "EVIL@acme",
+      "x-qm-locale": "en",
     },
   });
   assert.equal(r.status, 200);
@@ -144,6 +231,7 @@ test("valid session: upstream receives ONLY the synthesized cookie, prefix strip
   assert.equal(body.cookie, "webuiuser=U1");
   assert.equal(body.headers["x-as-principal"], undefined);
   assert.equal(body.headers["x-admin-actor"], undefined);
+  assert.equal(body.headers["x-qm-locale"], "ja");
 });
 
 test("web-ui /app-edit drops x-frame-options so its own frame-ancestors CSP can allow the app origin", async () => {
@@ -157,19 +245,46 @@ test("web-ui /app-edit drops x-frame-options so its own frame-ancestors CSP can 
 test("admin tier (derived gate): non-admin sub is 403 before the upstream; admin sub gets admin=<sub>", async () => {
   const denied = await fetch(`${base}/admin/api/me`, { headers: { cookie: sessionCookie("U1") } });
   assert.equal(denied.status, 403);
-  const deniedHtml = await fetch(`${base}/admin/`, { headers: { cookie: sessionCookie("U1"), accept: "text/html" } });
+  const deniedHtml = await fetch(`${base}/admin/`, {
+    headers: { cookie: `${sessionCookie("U1")}; qm_locale=ja`, accept: "text/html" },
+  });
   assert.equal(deniedHtml.status, 403);
-  assert.match(await deniedHtml.text(), /admin access/i);
+  const deniedPage = await deniedHtml.text();
+  assert.match(deniedPage, /<html lang="ja">/);
+  assert.match(deniedPage, /管理画面を利用できません/);
 
-  const ok = await fetch(`${base}/admin/api/me`, { headers: { cookie: sessionCookie("U-admin") } });
+  const ok = await fetch(`${base}/admin/api/me`, {
+    headers: {
+      cookie: `${sessionCookie("U-admin")}; qm_locale=ja`,
+      "accept-language": "en-US",
+      "x-qm-locale": "en",
+    },
+  });
   assert.equal(ok.status, 200);
-  const body = (await ok.json()) as { cookie: string };
+  const body = (await ok.json()) as { cookie: string; headers: Record<string, string> };
   assert.equal(body.cookie, "admin=U-admin");
+  assert.equal(body.headers["x-qm-locale"], "ja");
 });
 
 test("admin gate fails closed for an unknown sub (whoami false ⇒ 403)", async () => {
   const r = await fetch(`${base}/admin/api/me`, { headers: { cookie: sessionCookie("U-ghost") } });
   assert.equal(r.status, 403);
+});
+
+test("admin gate renders a localized unavailable page when the admin service cannot answer", async () => {
+  failWhoami = true;
+  try {
+    const response = await fetch(`${base}/admin/?tab=users`, {
+      headers: { cookie: `${sessionCookie("U-admin-service-down")}; qm_locale=ja`, accept: "text/html" },
+    });
+    assert.equal(response.status, 403);
+    const page = await response.text();
+    assert.match(page, /<html lang="ja">/);
+    assert.match(page, /管理画面を一時的に利用できません/);
+    assert.match(page, /name="returnTo" value="\/admin\/\?tab=users"/);
+  } finally {
+    failWhoami = false;
+  }
 });
 
 test("an unclaimed prefix falls through to the web UI surface (its SPA owns unknown paths)", async () => {
@@ -248,6 +363,34 @@ test("new human path /connect/redeem/:id: session-gated; with session forwards t
   );
 });
 
+test("connector expiry and wrong-recipient pages use the request locale", async () => {
+  try {
+    consentResult = { status: "expired" };
+    const expiredToken = "expired-bearer-link-id";
+    const expired = await fetch(`${base}/connect/redeem/${expiredToken}?provider=google`, {
+      headers: { cookie: `${sessionCookie("eve@acme")}; qm_locale=ja`, accept: "text/html" },
+    });
+    assert.equal(expired.status, 200);
+    const expiredPage = await expired.text();
+    assert.match(expiredPage, /<html lang="ja">/);
+    assert.match(expiredPage, /接続リンクの有効期限が切れています/);
+    assert.doesNotMatch(expiredPage, new RegExp(expiredToken));
+
+    consentResult = { status: "wrong_recipient", provider: "google", clickerConnected: false };
+    const wrongToken = "wrong-recipient-bearer-link-id";
+    const wrong = await fetch(`${base}/connect/redeem/${wrongToken}?provider=google`, {
+      headers: { cookie: `${sessionCookie("eve@acme")}; qm_locale=ja`, accept: "text/html" },
+    });
+    assert.equal(wrong.status, 200);
+    const wrongPage = await wrong.text();
+    assert.match(wrongPage, /このリンクは別の利用者向けです/);
+    assert.doesNotMatch(wrongPage, new RegExp(wrongToken));
+    assert.match(wrongPage, /name="returnTo" value="\/"/);
+  } finally {
+    consentResult = { status: "authorize", authorizeUrl: "https://accounts.google.test/o/oauth2?x=1" };
+  }
+});
+
 test("new human path /connect/:provider/self-connect: session-gated; with session it starts a personal flow via core", async () => {
   const noSession = await fetch(`${base}/connect/google/self-connect`, { redirect: "manual" });
   assert.equal(noSession.status, 302);
@@ -261,6 +404,21 @@ test("new human path /connect/:provider/self-connect: session-gated; with sessio
     200,
     "reaches core (the mock returns no authorizeUrl, so the portal renders a page rather than 404ing)",
   );
+});
+
+test("self-connect renders only the localized safe failure instead of a Core detail", async () => {
+  selfConnectResult = { message: "provider client_secret missing for internal deployment" };
+  try {
+    const response = await fetch(`${base}/connect/google/self-connect`, {
+      headers: { cookie: `${sessionCookie("eve@acme")}; qm_locale=ja`, accept: "text/html" },
+    });
+    assert.equal(response.status, 200);
+    const page = await response.text();
+    assert.match(page, /接続を開始できませんでした。このアプリは設定されていない可能性があります。/);
+    assert.doesNotMatch(page, /provider client_secret missing/);
+  } finally {
+    selfConnectResult = {};
+  }
 });
 
 test("new human path /drop/:id: form GET reaches the core /v1 drop form with x-drop-owner; POST /drop/:id never redirects (no session → 401, cross-origin → 403)", async () => {
@@ -309,6 +467,22 @@ test("new human path /drop/:id: form GET reaches the core /v1 drop form with x-d
   assert.equal(ob.headers["x-drop-owner"], "owner@acme");
 });
 
+test("credential-service network failures render a localized safe page", async () => {
+  failSecretDrop = true;
+  try {
+    const response = await fetch(`${base}/drop/down/form?t=link-token`, {
+      headers: { cookie: `${sessionCookie("owner@acme")}; qm_locale=ja`, accept: "text/html" },
+    });
+    assert.equal(response.status, 502);
+    const page = await response.text();
+    assert.match(page, /<html lang="ja">/);
+    assert.match(page, /認証情報サービスを利用できません/);
+    assert.doesNotMatch(page, /link-token/);
+  } finally {
+    failSecretDrop = false;
+  }
+});
+
 test("deployments are OFF by default (404 even with a session)", async () => {
   const r = await fetch(`${base}/d/some-app/`, { headers: { cookie: sessionCookie("U1") } });
   assert.equal(r.status, 404);
@@ -327,8 +501,15 @@ test("auth/login sets the tmp cookie and 302s to the IdP with PKCE+state+nonce",
 });
 
 test("auth/callback with no tmp cookie fails closed (400, no token exchange)", async () => {
-  const r = await fetch(`${base}/auth/callback?code=x&state=y`, { redirect: "manual" });
+  const r = await fetch(`${base}/auth/callback?code=x&state=y`, {
+    redirect: "manual",
+    headers: { cookie: "qm_locale=ja", accept: "text/html" },
+  });
   assert.equal(r.status, 400);
+  const page = await r.text();
+  assert.match(page, /<html lang="ja">/);
+  assert.match(page, /サインインできませんでした/);
+  assert.match(page, /サインイン操作の有効期限が切れました/);
 });
 
 test("auth/logout requires same-origin and clears the session cookie", async () => {

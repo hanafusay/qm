@@ -16,12 +16,14 @@ import {
   which,
 } from "../util.ts";
 import {
+  defaultLocaleEnv,
   isVirtualService,
   ordered,
   orgEnv,
   runnableServices,
   serviceDef,
   virtualServiceEnv,
+  withoutDefaultLocale,
   type FlyServiceCtx,
   type LogOpts,
   type ServiceName,
@@ -204,6 +206,7 @@ function deriveToml(ctx: FlyCtx, service: ServiceName): string {
     ...sandboxEnv,
     ...virtualEnv,
     ...modelEnv,
+    ...defaultLocaleEnv(service, ctx.config.defaultLocale),
     ...configuredEnv,
     ...(service === "core" ? securityScreenEnv(ctx.config) : {}),
     ...deploymentEnv,
@@ -817,7 +820,7 @@ function pluginTomlContent(
     CORE_API_URL: `http://${appPrefix}-core.internal:8080`,
     ...orgEnv(plugin.name, orgId, publicUrl, hasPortal),
     PORT: "8080",
-    ...plugin.env,
+    ...withoutDefaultLocale(plugin.env),
     [FLY_DEPLOYMENT_ID_ENV]: flyDeploymentId(flyOrg, orgId, appPrefix),
   };
   const lines = [`app = ${tomlStr(`${appPrefix}-${plugin.name}`)}`, `primary_region = ${tomlStr(region)}`, "", "[env]"];

@@ -20,6 +20,7 @@ import {
 } from "../../chassis/src/http.ts";
 import { verifyPortalIdentity, PORTAL_IDENTITY_HEADER } from "../../chassis/src/portal-identity.ts";
 import { createBrandingCache, injectBranding } from "../../chassis/src/branding.ts";
+import { LOCALE_COOKIE, LOCALE_HEADER, normalizeLocale, resolveLocale, type Locale } from "../../chassis/src/locale.ts";
 import {
   CORE_API_URL as CORE,
   CORE_ORG_ID as ORG,
@@ -31,6 +32,16 @@ import {
 const PORT = portFromEnv(8096);
 const PUBLIC_URL = (process.env.WEB_UI_PUBLIC_URL ?? `http://localhost:${PORT}`).replace(/\/$/, "");
 const WEB_UI_DEV = process.env.WEB_UI_DEV === "1";
+const DEFAULT_LOCALE = process.env.QM_DEFAULT_LOCALE;
+const LOCALE_TTL_S = 31_536_000;
+const SECURE_COOKIES = PUBLIC_URL.startsWith("https://");
+const PUBLIC_ORIGIN = (() => {
+  try {
+    return new URL(PUBLIC_URL).origin;
+  } catch {
+    return "";
+  }
+})();
 const ALLOW_UNSIGNED_TEST_IDENTITY =
   process.env.NODE_ENV === "test" && process.env.ALLOW_UNSIGNED_TEST_IDENTITY === "1";
 const COOKIE_AUTH = !CORE_SIGNING_SECRET || ALLOW_UNSIGNED_TEST_IDENTITY;
@@ -59,6 +70,73 @@ async function brandIndexHtml(html: string): Promise<string> {
   const branded = injectBranding(html, branding);
   const label = branding.selfLabel?.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return label ? branded.replace(/<title>[^<]*<\/title>/, () => `<title>${label} · Web</title>`) : branded;
+}
+
+export function localeOf(req: IncomingMessage): Locale {
+  const selectedCookie = (() => {
+    try {
+      return cookie(req, LOCALE_COOKIE);
+    } catch {
+      return null;
+    }
+  })();
+  return resolveLocale({
+    explicit: normalizeLocale(req.headers[LOCALE_HEADER]) ?? selectedCookie,
+    defaultLocale: DEFAULT_LOCALE,
+    acceptLanguage: req.headers["accept-language"],
+  });
+}
+
+function sameOriginRequest(req: IncomingMessage): boolean {
+  const origin = req.headers.origin;
+  const originMatches =
+    typeof origin === "string" &&
+    (() => {
+      try {
+        return new URL(origin).origin === PUBLIC_ORIGIN;
+      } catch {
+        return false;
+      }
+    })();
+  const site = req.headers["sec-fetch-site"];
+  if (typeof site !== "string") return originMatches;
+  return site === "same-origin" && (originMatches || origin === undefined || origin === "null");
+}
+
+function localeCookie(locale: Locale): string {
+  const parts = [
+    `${LOCALE_COOKIE}=${encodeURIComponent(locale)}`,
+    "HttpOnly",
+    "SameSite=Lax",
+    "Path=/",
+    `Max-Age=${LOCALE_TTL_S}`,
+  ];
+  if (SECURE_COOKIES) parts.push("Secure");
+  return parts.join("; ");
+}
+
+function sanitizeLocaleReturnTo(value: string | null): string {
+  if (!value || value[0] !== "/" || value.startsWith("//")) return "/";
+  if (/[\\\x00-\x1f]/.test(value) || /%2f%2f|%5c/i.test(value)) return "/";
+  try {
+    const target = new URL(value, PUBLIC_ORIGIN);
+    if (target.origin !== PUBLIC_ORIGIN || target.pathname.startsWith("//")) return "/";
+    return `${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return "/";
+  }
+}
+
+export async function renderIndexHtml(html: string, selected: Locale): Promise<string> {
+  const branded = await brandIndexHtml(html);
+  const withLocale = branded.replace(/<html\b([^>]*)>/i, (tag, attributes: string) => {
+    if (/\slang\s*=/i.test(attributes)) return tag.replace(/\slang\s*=\s*(["'])[^"']*\1/i, ` lang="${selected}"`);
+    return `<html lang="${selected}"${attributes}>`;
+  });
+  const meta = `<meta name="qm-locale" content="${selected}" />`;
+  const localeMeta = /<meta\s+name=(["'])qm-locale\1\s+content=(["'])[^"']*\2\s*\/?\s*>/i;
+  if (localeMeta.test(withLocale)) return withLocale.replace(localeMeta, meta);
+  return withLocale.replace(/<head\b[^>]*>/i, (head) => `${head}${meta}`);
 }
 
 const portalTokenStore = new AsyncLocalStorage<string | undefined>();
@@ -157,6 +235,7 @@ const UNTRUSTED_CONTENT_SANDBOX_CSP = "sandbox allow-scripts allow-forms allow-p
 interface ViteDevServer {
   middlewares(req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void): void;
   transformIndexHtml(url: string, html: string): Promise<string>;
+  close(): Promise<void>;
 }
 
 type CreateViteServer = (opts: Record<string, unknown>) => Promise<ViteDevServer>;
@@ -169,6 +248,10 @@ function relay(res: ServerResponse, r: { status: number; text: string }): void {
 function sendHtml(res: ServerResponse, status: number, html: string): void {
   res.writeHead(status, withSecurityHeaders({ "content-type": "text/html; charset=utf-8" }));
   res.end(html);
+}
+
+function localizedHtmlHeaders(headers: Record<string, string>): Record<string, string> {
+  return withSecurityHeaders({ ...headers, vary: "x-qm-locale, accept-language" });
 }
 
 const SSE_CORE_POLL_MS = 100;
@@ -597,7 +680,7 @@ async function uploadFileFromRequest(
   return void res.end(registered.text);
 }
 
-async function serveStatic(res: ServerResponse, urlPath: string): Promise<void> {
+async function serveStatic(req: IncomingMessage, res: ServerResponse, urlPath: string): Promise<void> {
   const rel = normalize(decodeURIComponent(urlPath)).replace(/^(\.\.[/\\])+/, "");
   let filePath = join(DIST, rel);
   if (!filePath.startsWith(DIST)) return void json(res, 403, { error: "forbidden" });
@@ -612,12 +695,12 @@ async function serveStatic(res: ServerResponse, urlPath: string): Promise<void> 
     }
   }
   if (filePath.endsWith("index.html")) {
-    const branded = await brandIndexHtml(readFileSync(filePath, "utf8"));
+    const localized = await renderIndexHtml(readFileSync(filePath, "utf8"), localeOf(req));
     res.writeHead(
       200,
-      withSecurityHeaders({ "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" }),
+      localizedHtmlHeaders({ "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" }),
     );
-    return void res.end(branded);
+    return void res.end(localized);
   }
   const type = CONTENT_TYPES[extname(filePath)] ?? "application/octet-stream";
   res.writeHead(
@@ -644,7 +727,7 @@ async function serveAppEditHtml(req: IncomingMessage, res: ServerResponse, url: 
     if (!existsSync(filePath)) return false;
     html = readFileSync(filePath, "utf8");
   }
-  const headers = withSecurityHeaders({ "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
+  const headers = localizedHtmlHeaders({ "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
   headers["content-security-policy"] = SPA_CSP.replace(
     "frame-ancestors 'self'",
     `frame-ancestors 'self' ${slug}.${APPS_FRAME_DOMAIN}`,
@@ -652,7 +735,7 @@ async function serveAppEditHtml(req: IncomingMessage, res: ServerResponse, url: 
   delete headers["x-frame-options"];
   res.removeHeader("x-frame-options");
   res.writeHead(200, headers);
-  res.end(await brandIndexHtml(html));
+  res.end(await renderIndexHtml(html, localeOf(req)));
   return true;
 }
 
@@ -673,6 +756,11 @@ async function createVite(server: Server): Promise<ViteDevServer | undefined> {
       hmr: { server },
     },
   });
+}
+
+export async function startVite(server: Server): Promise<ViteDevServer | undefined> {
+  vite = await createVite(server);
+  return vite;
 }
 
 async function serveVite(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
@@ -704,7 +792,9 @@ async function serveVite(req: IncomingMessage, res: ServerResponse, path: string
   let html = readFileSync(join(ROOT, "index.html"), "utf8");
   html = html.replace("%BASE_URL%favicon.svg", "favicon.svg");
   html = await vite.transformIndexHtml(req.url ?? "/", html);
-  sendHtml(res, 200, await brandIndexHtml(html));
+  const localized = await renderIndexHtml(html, localeOf(req));
+  res.writeHead(200, localizedHtmlHeaders({ "content-type": "text/html; charset=utf-8" }));
+  res.end(localized);
   return true;
 }
 
@@ -716,6 +806,27 @@ const routeRequest = async (req: IncomingMessage, res: ServerResponse) => {
   if (method === "GET" && path === "/healthz") return json(res, 200, { ok: true });
   if (method === "GET" && path === "/favicon.svg") {
     return serveEmojiFavicon(res, process.env.WEB_UI_FAVICON_EMOJI ?? "\u{1F3F4}\u{200D}\u2620\uFE0F", "no-cache");
+  }
+
+  if (path === "/locale") {
+    if (method !== "POST") return json(res, 405, { error: "method_not_allowed" });
+    if (!sameOriginRequest(req)) return json(res, 403, { error: "forbidden", message: "cross-origin request refused" });
+    const contentType = req.headers["content-type"];
+    if (
+      typeof contentType !== "string" ||
+      contentType.split(";", 1)[0]?.trim().toLowerCase() !== "application/x-www-form-urlencoded"
+    ) {
+      return json(res, 415, { error: "unsupported_media_type" });
+    }
+    const form = new URLSearchParams(await readBodyCapped(req, 1024));
+    const locale = normalizeLocale(form.get("locale"));
+    if (!locale) return json(res, 400, { error: "bad_request", message: "locale must be en or ja" });
+    res.writeHead(303, {
+      "set-cookie": localeCookie(locale),
+      location: sanitizeLocaleReturnTo(form.get("returnTo")),
+      "cache-control": "no-store",
+    });
+    return void res.end();
   }
 
   if (method === "POST" && path === "/signin") {
@@ -1858,6 +1969,7 @@ const routeRequest = async (req: IncomingMessage, res: ServerResponse) => {
     const portalTok = portalTokenStore.getStore();
     const headers: Record<string, string> = {
       ...signedHeaders(CORE_SIGNING_SECRET, method, corePath, "", user),
+      [LOCALE_HEADER]: localeOf(req),
       "x-as-principal": user,
       ...(portalTok ? { [PORTAL_IDENTITY_HEADER]: portalTok } : {}),
     };
@@ -1878,7 +1990,7 @@ const routeRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
   if (method === "GET") {
     if (await serveVite(req, res, path)) return;
-    return await serveStatic(res, path === "/" ? "/index.html" : path);
+    return await serveStatic(req, res, path === "/" ? "/index.html" : path);
   }
 
   json(res, 404, { error: "not found" });
@@ -1912,9 +2024,8 @@ const server = createServer((req, res) => {
 });
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  createVite(server)
-    .then((v) => {
-      vite = v;
+  startVite(server)
+    .then(() => {
       server.listen(PORT, () => {
         console.log(
           `[web-ui] surface on http://localhost:${PORT} → core ${CORE} (org ${ORG})${WEB_UI_DEV ? " [vite hmr]" : ""}`,

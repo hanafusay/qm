@@ -43,7 +43,8 @@ test("a pane opened from a project's + starts its chat in that project", () => {
   assert.ok(embed, "the embed boot branch not found");
   assert.match(embed, /await ensureContexts\(\)\)\.find\(\(c\) => c\.scopeId === scope\)/);
   assert.doesNotMatch(embed, /newChat\(\{ scopeId: scope/, "the URL's scope must not reach newChat unchecked");
-  assert.match(embed, /newChat\(context \? \{ scopeId: context\.scopeId/);
+  assert.match(embed, /context && context\.kind !== "personal"/);
+  assert.match(embed, /kind: context\.project \? "project" : context\.kind/);
 });
 
 test("a conversation dropped on a pane's tab strip joins that pane — and only there", () => {
@@ -78,7 +79,7 @@ test("the pane body no longer offers a tab zone", () => {
   assert.doesNotMatch(layout, /"tab"/, "DropEdge must drop the zone that no longer exists");
   const zones = fn(split, "zonesTpl");
   assert.doesNotMatch(zones, /tab/i);
-  assert.match(zones, /zoneTpl\("center", "Open here"/);
+  assert.match(zones, /zoneTpl\("center", t\("split\.openHere"\)/);
   for (const edge of ["left", "right", "top", "bottom"]) assert.match(zones, new RegExp(`zoneTpl\\("${edge}"`));
   assert.doesNotMatch(css, /\.zone-tab \{/);
   const center = css.match(/\.zone-center \{[^}]*\}/)?.[0] ?? "";

@@ -393,6 +393,7 @@ const config: QmConfig = {
   contract: 1,
   orgId: "acme",
   publicUrl: "https://agent.acme.example",
+  defaultLocale: "en",
   target: "aws",
   services: ["core", "slack", "web-ui", "admin", "portal"],
   plugins: [],
@@ -436,6 +437,7 @@ test("AWS environment derives identity, public URLs, private wiring, and MicroVM
     CORE_API_URL: "http://core.acme.internal:8080",
     CORE_ORG_ID: "acme",
     PORT: "8080",
+    QM_DEFAULT_LOCALE: "en",
     REQUIRE_SIGNED_PORTAL_IDENTITY: "1",
     WEB_UI_PUBLIC_URL: "https://agent.acme.example",
   });
@@ -465,6 +467,58 @@ test("AWS environment derives identity, public URLs, private wiring, and MicroVM
   assert.equal(core.DEPLOY_PROVIDER, "aws");
   assert.equal(core.AWS_DEPLOY_REGION, "us-west-2");
   assert.equal(core.PORT, "8080");
+});
+
+test("AWS derives the configured default locale only for localized surfaces", () => {
+  for (const service of ["web-ui", "admin", "portal"] as const) {
+    assert.equal(serviceEnvironment(config, service).QM_DEFAULT_LOCALE, "en");
+  }
+  assert.equal(serviceEnvironment(config, "core").QM_DEFAULT_LOCALE, undefined);
+
+  const japanese = { ...config, defaultLocale: "ja" as const };
+  for (const service of ["web-ui", "admin", "portal"] as const) {
+    assert.equal(serviceEnvironment(japanese, service).QM_DEFAULT_LOCALE, "ja");
+  }
+  assert.equal(serviceEnvironment(japanese, "core").QM_DEFAULT_LOCALE, undefined);
+});
+
+test("AWS keeps the English deployment default for configs that omit defaultLocale", () => {
+  const legacy = { ...config };
+  delete legacy.defaultLocale;
+  for (const service of ["web-ui", "admin", "portal"] as const) {
+    assert.equal(serviceEnvironment(legacy, service).QM_DEFAULT_LOCALE, "en");
+  }
+});
+
+test("AWS omits managed locale overrides from core and plugins", () => {
+  const unsafe: QmConfig = {
+    ...config,
+    env: { ...config.env, slack: { QM_DEFAULT_LOCALE: "ja", FEATURE_SWITCH: "on" } },
+    plugins: [
+      { name: "linear", image: "ghcr.io/acme/linear:1", env: { QM_DEFAULT_LOCALE: "ja", LINEAR_REGION: "us" } },
+    ],
+    aws: {
+      ...config.aws!,
+      services: {
+        ...config.aws!.services,
+        linear: { ecrRepository: "qm-linear", ecsService: "acme-linear", cpu: 256, memory: 512, architecture: "amd64" },
+      },
+    },
+  };
+  assert.equal(serviceEnvironment(unsafe, "core").QM_DEFAULT_LOCALE, undefined);
+  const task = renderTaskDefinition(
+    unsafe,
+    "linear",
+    `123456789012.dkr.ecr.us-west-2.amazonaws.com/qm-linear@sha256:${"a".repeat(64)}`,
+  );
+  const environment = Object.fromEntries(
+    (task.containerDefinitions[0]!.environment as Array<{ name: string; value: string }>).map(({ name, value }) => [
+      name,
+      value,
+    ]),
+  );
+  assert.equal(environment.QM_DEFAULT_LOCALE, undefined);
+  assert.equal(environment.LINEAR_REGION, "us");
 });
 
 test("AWS routes security screen proxy configuration and its token only to core", () => {

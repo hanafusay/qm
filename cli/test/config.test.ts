@@ -90,6 +90,14 @@ test("basePort must be a positive integer", () => {
   withConfig({ basePort: 1.5 }, ({ path }) => assert.throws(() => loadConfigAt(path), /basePort/));
 });
 
+test("defaultLocale accepts en or ja and defaults to en", () => {
+  withConfig({}, ({ path }) => assert.equal(loadConfigAt(path).config.defaultLocale, "en"));
+  withConfig({ defaultLocale: "ja" }, ({ path }) => assert.equal(loadConfigAt(path).config.defaultLocale, "ja"));
+  withConfig({ defaultLocale: "fr" }, ({ path }) =>
+    assert.throws(() => loadConfigAt(path), /"defaultLocale" must be "en" or "ja"/),
+  );
+});
+
 test("plugins: image is OPTIONAL (source plugins); env attaches to either; bad image rejected", () => {
   withConfig({ plugins: [{ name: "intercom", env: { INTERCOM_REGION: "us" } }] }, ({ path }) => {
     const { config } = loadConfigAt(path);
@@ -131,6 +139,47 @@ test("listen ports are managed consistently across deployment targets", () => {
   withConfig({ plugins: [{ name: "linear", env: { PORT: "9000" } }] }, ({ path }) => {
     assert.throws(() => loadConfigAt(path), /plugins\[0\]\.env\.PORT.*managed/);
   });
+});
+
+test("QM_DEFAULT_LOCALE is managed by the deployment target", () => {
+  withConfig({ env: { "web-ui": { QM_DEFAULT_LOCALE: "ja" } } }, ({ path }) => {
+    assert.throws(() => loadConfigAt(path), /env\.web-ui\.QM_DEFAULT_LOCALE.*managed/);
+  });
+  withConfig({ secretEnv: { portal: { QM_DEFAULT_LOCALE: "LOCALE" } } }, ({ path }) => {
+    assert.throws(() => loadConfigAt(path), /secretEnv\.portal\.QM_DEFAULT_LOCALE.*managed/);
+  });
+});
+
+test("QM_DEFAULT_LOCALE cannot enter virtual services or plugins", () => {
+  withConfig({ env: { slack: { QM_DEFAULT_LOCALE: "ja" } } }, ({ path }) => {
+    assert.throws(() => loadConfigAt(path), /env\.slack\.QM_DEFAULT_LOCALE.*managed/);
+  });
+  withConfig({ secretEnv: { slack: { QM_DEFAULT_LOCALE: "LOCALE" } } }, ({ path }) => {
+    assert.throws(() => loadConfigAt(path), /secretEnv\.slack\.QM_DEFAULT_LOCALE.*managed/);
+  });
+  withConfig({ plugins: [{ name: "linear", env: { QM_DEFAULT_LOCALE: "ja" } }] }, ({ path }) => {
+    assert.throws(() => loadConfigAt(path), /plugins\[0\]\.env\.QM_DEFAULT_LOCALE.*managed/);
+  });
+  withConfig({ plugins: [{ name: "linear", secrets: [{ name: "QM_DEFAULT_LOCALE" }] }] }, ({ path }) => {
+    assert.throws(() => loadConfigAt(path), /plugins\[0\]\.secrets\[0\]\.name\.QM_DEFAULT_LOCALE.*managed/);
+  });
+});
+
+test("virtual-service and plugin variables preserve unrelated values", () => {
+  withConfig(
+    {
+      env: { slack: { FEATURE_SWITCH: "on" } },
+      secretEnv: { slack: { SERVICE_TOKEN: "SLACK_SERVICE_TOKEN" } },
+      plugins: [{ name: "linear", env: { LINEAR_REGION: "us" }, secrets: [{ name: "LINEAR_TOKEN" }] }],
+    },
+    ({ path }) => {
+      const { config } = loadConfigAt(path);
+      assert.deepEqual(config.env.slack, { FEATURE_SWITCH: "on" });
+      assert.deepEqual(config.secretEnv?.slack, { SERVICE_TOKEN: "SLACK_SERVICE_TOKEN" });
+      assert.deepEqual(config.plugins[0]?.env, { LINEAR_REGION: "us" });
+      assert.deepEqual(config.plugins[0]?.secrets, [{ name: "LINEAR_TOKEN" }]);
+    },
+  );
 });
 
 test("portal-mounted admin uses the portal's fixed /admin route", () => {
