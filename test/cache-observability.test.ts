@@ -46,16 +46,19 @@ function loadViewerCacheHelpers(): {
     "document",
     "fmtPct",
     "fmtTokens",
+    "t",
     `${src}\nreturn { callCacheUsage, sumCacheUsage, viewerCacheHitRatio: cacheHitRatio, viewerIsStablePrefixMiss: isStablePrefixMiss, cacheMetaItems };`,
   ) as (
     document: { createElement: (tag: string) => { tagName: string; className: string; textContent: string } },
     fmtPct: (n: number) => string,
     fmtTokens: (n: number) => string,
+    t: (key: string) => string,
   ) => ReturnType<typeof loadViewerCacheHelpers>;
   return factory(
     { createElement: (tag: string) => ({ tagName: tag.toUpperCase(), className: "", textContent: "" }) },
     (n: number) => ((n || 0) * 100).toFixed(1) + "%",
     (n: number) => String(n) + " tokens",
+    (key: string) => ({ "context.cache": "cache", "context.stablePrefixMiss": "stable-prefix miss" })[key] ?? key,
   );
 }
 
