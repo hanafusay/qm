@@ -197,6 +197,7 @@ test("Japanese recent project regions name each destination naturally", () => {
   const originalListEl = appState.listEl;
   const originalView = appState.currentView;
   const originalWebOnly = sessionsState.webOnly;
+  const originalSetTimeout = window.setTimeout;
   const list = document.createElement("div");
   contextsState.list = [
     { scopeId: "personal:alice", kind: "personal", name: null, sessionCount: 1, lastActivityAt: 2 },
@@ -259,6 +260,7 @@ test("Japanese recent project regions name each destination naturally", () => {
   appState.listEl = list;
   appState.currentView = "chats";
   sessionsState.webOnly = false;
+  Object.defineProperty(window, "setTimeout", { configurable: true, writable: true, value: () => 0 });
 
   try {
     renderList();
@@ -272,6 +274,7 @@ test("Japanese recent project regions name each destination naturally", () => {
     appState.listEl = originalListEl;
     appState.currentView = originalView;
     sessionsState.webOnly = originalWebOnly;
+    Object.defineProperty(window, "setTimeout", { configurable: true, writable: true, value: originalSetTimeout });
   }
 });
 
