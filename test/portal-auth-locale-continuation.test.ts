@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { CLIENT_ID, CLIENT_SECRET, hiddenRequestToken, linkFrom, startHarness } from "../../auth/test/helpers.ts";
+import { CLIENT_ID, CLIENT_SECRET, hiddenRequestToken, linkFrom, startHarness } from "../plugins/auth/test/helpers.ts";
 
 const PUBLIC = "http://portal.test";
 const destination = "/admin/?tab=users";
@@ -38,7 +38,7 @@ delete process.env.PORTAL_PLAYGROUND;
 delete process.env.PORTAL_COOKIE_DOMAIN;
 delete process.env.PORTAL_APPS_DOMAIN;
 
-const { server } = await import("../src/index.ts");
+const { server } = await import("../plugins/portal/src/index.ts");
 await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 

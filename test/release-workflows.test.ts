@@ -2,6 +2,15 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
+test("CLI version bumps are required only in the package-owning repository", () => {
+  const workflow = readFileSync(".github/workflows/cicd.yml", "utf8");
+
+  assert.match(
+    workflow,
+    /^ {2}cli-version:\n {4}name: CLI version bump\n {4}if: github\.event_name == 'pull_request' && github\.repository == 'yc-software\/qm'$/m,
+  );
+});
+
 test("the release publishes signed images and never a package", () => {
   const workflow = readFileSync(".github/workflows/release-package.yml", "utf8");
 
