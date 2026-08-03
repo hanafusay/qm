@@ -91,7 +91,7 @@ jobs:
 
   cli-version:
     name: CLI version bump
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.repository == 'yc-software/qm'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd

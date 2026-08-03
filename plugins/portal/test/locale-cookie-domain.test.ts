@@ -23,7 +23,7 @@ test("the locale cookie is Secure, domain-scoped, and clears a stale host-only v
   });
   assert.equal(response.status, 303);
   const cookies = response.headers.getSetCookie().filter((cookie) => cookie.startsWith("qm_locale="));
-  assert.ok(cookies.some((cookie) => /^qm_locale=ja;/.test(cookie) && /Domain=qm\.example\.com/.test(cookie)));
-  assert.ok(cookies.some((cookie) => /^qm_locale=;/.test(cookie) && !/Domain=/.test(cookie)));
+  assert.ok(cookies.some((cookie) => cookie.startsWith("qm_locale=ja;") && /Domain=qm\.example\.com/.test(cookie)));
+  assert.ok(cookies.some((cookie) => cookie.startsWith("qm_locale=;") && !/Domain=/.test(cookie)));
   assert.ok(cookies.every((cookie) => cookie.includes("; Secure")));
 });

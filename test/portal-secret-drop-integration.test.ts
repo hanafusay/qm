@@ -1,4 +1,4 @@
-import "../../../test/support/auto-fake-sprites.ts";
+import "./support/auto-fake-sprites.ts";
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -7,12 +7,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
-import { buildApp, type BuiltApp } from "../../../src/wiring.ts";
-import { createServer as createCoreServer } from "../../../src/api/server.ts";
-import { mintCapabilityToken, CAPABILITY_TTL_MS } from "../../../src/auth/capability-token.ts";
-import { scopeId } from "../../../src/types.ts";
-import { testConfig } from "../../../test/support/test-config.ts";
-import { deriveKey, seal } from "../src/session.ts";
+import { buildApp, type BuiltApp } from "../src/wiring.ts";
+import { createServer as createCoreServer } from "../src/api/server.ts";
+import { mintCapabilityToken, CAPABILITY_TTL_MS } from "../src/auth/capability-token.ts";
+import { scopeId } from "../src/types.ts";
+import { testConfig } from "./support/test-config.ts";
+import { deriveKey, seal } from "../plugins/portal/src/session.ts";
 
 const SIGNING_SECRET = "portal-core-secret-drop-integration".repeat(2);
 const PORTAL_SECRET = "portal-secret-drop-session-secret";
@@ -74,7 +74,7 @@ test.before(async () => {
   process.env.ADMIN_UPSTREAM = coreBase;
   process.env.NODE_ENV = "test";
   delete process.env.QM_DEFAULT_LOCALE;
-  const portal = await import("../src/index.ts");
+  const portal = await import("../plugins/portal/src/index.ts");
   portalServer = portal.server;
   await new Promise<void>((resolve) => portalServer.listen(0, resolve));
   portalBase = `http://localhost:${(portalServer.address() as AddressInfo).port}`;

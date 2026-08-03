@@ -1,8 +1,6 @@
-export const LOCALES = ["en", "ja"] as const;
-export type Locale = (typeof LOCALES)[number];
+export type Locale = "en" | "ja";
 export const LOCALE_COOKIE = "qm_locale";
 export const LOCALE_HEADER = "x-qm-locale";
-export const DEFAULT_LOCALE_ENV = "QM_DEFAULT_LOCALE";
 
 const qvalue = /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/;
 
